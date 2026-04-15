@@ -162,8 +162,6 @@ private:
 
     TwistMsg cmd;
     if (last_joy_msg_ != nullptr) {
-      cmd.linear.x = readAxis(last_joy_msg_->axes, surge_axis_) * surge_scale_;
-      cmd.linear.y = readAxis(last_joy_msg_->axes, sway_axis_) * sway_scale_;
       const bool lb_pressed = isValidButtonIndex(last_joy_msg_->buttons, lb_button_) &&
         last_joy_msg_->buttons[static_cast<size_t>(lb_button_)] != 0;
 
@@ -171,6 +169,8 @@ private:
         cmd.angular.x = readAxis(last_joy_msg_->axes, roll_axis_) * roll_scale_;
         cmd.angular.y = readAxis(last_joy_msg_->axes, pitch_axis_) * pitch_scale_;
       } else {
+        cmd.linear.x = readAxis(last_joy_msg_->axes, surge_axis_) * surge_scale_;
+        cmd.linear.y = readAxis(last_joy_msg_->axes, sway_axis_) * sway_scale_;
         cmd.linear.z = -readAxis(last_joy_msg_->axes, heave_axis_) * heave_scale_;
         cmd.angular.z = readAxis(last_joy_msg_->axes, yaw_axis_) * yaw_scale_;
       }
