@@ -10,6 +10,7 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joy.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 class CirtesubTeleop : public rclcpp::Node
 {
@@ -25,9 +26,16 @@ public:
     declare_parameter<std::string>(
       "stabilize_controller.feedforward_topic",
       "/stabilize_controller/feedforward");
+    declare_parameter<std::string>(
+      "stabilize_controller.enable_roll_pitch_service",
+      "/stabilize_controller/enable_roll_pitch");
+    declare_parameter<std::string>(
+      "stabilize_controller.disable_roll_pitch_service",
+      "/stabilize_controller/disable_roll_pitch");
     declare_parameter<int>("buttons.lb", 4);
     declare_parameter<int>("buttons.rb", 5);
     declare_parameter<int>("buttons.y", 3);
+    declare_parameter<int>("axes.hat_vertical", 7);
     declare_parameter<int>("axes.surge", 1);
     declare_parameter<int>("axes.sway", 0);
     declare_parameter<int>("axes.yaw", 3);
@@ -48,9 +56,14 @@ public:
     body_force_controller_name_ = get_parameter("body_force_controller.name").as_string();
     stabilize_controller_name_ = get_parameter("stabilize_controller.name").as_string();
     feedforward_topic_ = get_parameter("stabilize_controller.feedforward_topic").as_string();
+    enable_roll_pitch_service_name_ =
+      get_parameter("stabilize_controller.enable_roll_pitch_service").as_string();
+    disable_roll_pitch_service_name_ =
+      get_parameter("stabilize_controller.disable_roll_pitch_service").as_string();
     lb_button_ = get_parameter("buttons.lb").as_int();
     rb_button_ = get_parameter("buttons.rb").as_int();
     y_button_ = get_parameter("buttons.y").as_int();
+    hat_vertical_axis_ = get_parameter("axes.hat_vertical").as_int();
     surge_axis_ = get_parameter("axes.surge").as_int();
     sway_axis_ = get_parameter("axes.sway").as_int();
     yaw_axis_ = get_parameter("axes.yaw").as_int();
@@ -81,6 +94,10 @@ public:
 
     switch_controller_client_ =
       create_client<controller_manager_msgs::srv::SwitchController>(controller_switch_service_);
+    enable_roll_pitch_client_ =
+      create_client<std_srvs::srv::Trigger>(enable_roll_pitch_service_name_);
+    disable_roll_pitch_client_ =
+      create_client<std_srvs::srv::Trigger>(disable_roll_pitch_service_name_);
 
     timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / rate_),
@@ -131,6 +148,8 @@ private:
       requestBodyForceState(!body_force_enabled_);
     }
 
+    processHatCommands(*msg);
+
     last_stabilize_combo_state_ = stabilize_combo_pressed;
     last_body_force_combo_state_ = body_force_combo_pressed;
   }
@@ -152,7 +171,7 @@ private:
         cmd.angular.x = readAxis(last_joy_msg_->axes, roll_axis_) * roll_scale_;
         cmd.angular.y = readAxis(last_joy_msg_->axes, pitch_axis_) * pitch_scale_;
       } else {
-        cmd.linear.z = readAxis(last_joy_msg_->axes, heave_axis_) * heave_scale_;
+        cmd.linear.z = -readAxis(last_joy_msg_->axes, heave_axis_) * heave_scale_;
         cmd.angular.z = readAxis(last_joy_msg_->axes, yaw_axis_) * yaw_scale_;
       }
     }
@@ -286,6 +305,68 @@ private:
     (void)future;
   }
 
+  void processHatCommands(const JoyMsg & msg)
+  {
+    if (!stabilize_enabled_) {
+      last_hat_vertical_state_ = 0;
+      return;
+    }
+
+    const double hat_value = readAxis(msg.axes, hat_vertical_axis_);
+    int current_hat_vertical_state = 0;
+    if (hat_value > 0.5) {
+      current_hat_vertical_state = 1;
+    } else if (hat_value < -0.5) {
+      current_hat_vertical_state = -1;
+    }
+
+    if (current_hat_vertical_state != last_hat_vertical_state_) {
+      if (current_hat_vertical_state > 0) {
+        requestRollPitchService(enable_roll_pitch_client_, "enable");
+      } else if (current_hat_vertical_state < 0) {
+        requestRollPitchService(disable_roll_pitch_client_, "disable");
+      }
+    }
+
+    last_hat_vertical_state_ = current_hat_vertical_state;
+  }
+
+  void requestRollPitchService(
+    const rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr & client,
+    const std::string & action_name)
+  {
+    if (!client->wait_for_service(std::chrono::milliseconds(200))) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Roll/pitch %s service is not available.",
+        action_name.c_str());
+      return;
+    }
+
+    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+    const auto future = client->async_send_request(
+      request,
+      [this, action_name](rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future_response)
+      {
+        const auto response = future_response.get();
+        if (!response->success) {
+          RCLCPP_WARN(
+            get_logger(),
+            "Failed to %s roll/pitch: %s",
+            action_name.c_str(),
+            response->message.c_str());
+          return;
+        }
+
+        RCLCPP_INFO(
+          get_logger(),
+          "Roll/pitch %s request accepted.",
+          action_name.c_str());
+      });
+
+    (void)future;
+  }
+
   double readAxis(const std::vector<float> & axes, int index) const
   {
     if (!isValidAxisIndex(axes, index)) {
@@ -318,10 +399,11 @@ private:
   int lb_button_{4};
   int rb_button_{5};
   int y_button_{3};
-  int surge_axis_{1};
-  int sway_axis_{0};
-  int yaw_axis_{3};
-  int heave_axis_{4};
+  int hat_vertical_axis_{7};
+  int surge_axis_{4};
+  int sway_axis_{3};
+  int yaw_axis_{0};
+  int heave_axis_{1};
   int roll_axis_{3};
   int pitch_axis_{4};
 
@@ -330,18 +412,23 @@ private:
   bool last_stabilize_combo_state_{false};
   bool last_body_force_combo_state_{false};
   bool switch_in_progress_{false};
+  int last_hat_vertical_state_{0};
 
   std::string joy_topic_;
   std::string controller_switch_service_;
   std::string body_force_controller_name_;
   std::string stabilize_controller_name_;
   std::string feedforward_topic_;
+  std::string enable_roll_pitch_service_name_;
+  std::string disable_roll_pitch_service_name_;
 
   JoyMsg::SharedPtr last_joy_msg_;
 
   rclcpp::Subscription<JoyMsg>::SharedPtr joy_sub_;
   rclcpp::Publisher<TwistMsg>::SharedPtr feedforward_pub_;
   rclcpp::Client<SwitchControllerSrv>::SharedPtr switch_controller_client_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr enable_roll_pitch_client_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr disable_roll_pitch_client_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

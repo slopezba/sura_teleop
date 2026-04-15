@@ -10,6 +10,8 @@ sura_teleop:
     stabilize_controller:
       name: stabilize_controller
       feedforward_topic: /stabilize_controller/feedforward
+      enable_roll_pitch_service: /stabilize_controller/enable_roll_pitch
+      disable_roll_pitch_service: /stabilize_controller/disable_roll_pitch
 
     buttons:
       lb: 4
@@ -17,18 +19,19 @@ sura_teleop:
       y: 3
 
     axes:
-      surge: 1
-      sway: 0
-      yaw: 3
-      heave: 4
+      hat_vertical: 7
+      surge: 4
+      sway: 3
+      yaw: 0
+      heave: 1
       roll: 3
       pitch: 4
 
     scales:
       surge: 1.0
       sway: 1.0
-      yaw: 1.0
       heave: 1.0
+      yaw: 1.0
       roll: 1.0
       pitch: 1.0
 

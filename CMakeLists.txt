@@ -11,6 +11,7 @@ find_package(controller_manager_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 add_executable(cirtesub_teleop
   src/cirtesub_teleop.cpp
@@ -22,6 +23,7 @@ ament_target_dependencies(cirtesub_teleop
   geometry_msgs
   rclcpp
   sensor_msgs
+  std_srvs
 )
 
 install(
