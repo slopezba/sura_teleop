@@ -1,0 +1,26 @@
+sura_teleop:
+  ros__parameters:
+    rate: 20.0
+    joy_topic: /joy
+    controller_switch_service: /controller_manager/switch_controller
+
+    stabilize_controller:
+      name: stabilize_controller
+      feedforward_topic: /stabilize_controller/feedforward
+
+    buttons:
+      toggle_stabilize: 3
+
+    axes:
+      surge: 1
+      sway: 0
+      heave: 4
+      yaw: 3
+
+    scales:
+      surge: 1.0
+      sway: 1.0
+      heave: 1.0
+      yaw: 1.0
+
+    deadzone: 0.05
