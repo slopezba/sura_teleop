@@ -20,35 +20,49 @@ public:
     declare_parameter<double>("rate", 20.0);
     declare_parameter<std::string>("joy_topic", "/joy");
     declare_parameter<std::string>("controller_switch_service", "/controller_manager/switch_controller");
+    declare_parameter<std::string>("body_force_controller.name", "body_force_controller");
     declare_parameter<std::string>("stabilize_controller.name", "stabilize_controller");
     declare_parameter<std::string>(
       "stabilize_controller.feedforward_topic",
       "/stabilize_controller/feedforward");
-    declare_parameter<int>("buttons.toggle_stabilize", 3);
+    declare_parameter<int>("buttons.lb", 4);
+    declare_parameter<int>("buttons.rb", 5);
+    declare_parameter<int>("buttons.y", 3);
     declare_parameter<int>("axes.surge", 1);
     declare_parameter<int>("axes.sway", 0);
-    declare_parameter<int>("axes.heave", 4);
     declare_parameter<int>("axes.yaw", 3);
+    declare_parameter<int>("axes.heave", 4);
+    declare_parameter<int>("axes.roll", 3);
+    declare_parameter<int>("axes.pitch", 4);
     declare_parameter<double>("scales.surge", 1.0);
     declare_parameter<double>("scales.sway", 1.0);
-    declare_parameter<double>("scales.heave", 1.0);
     declare_parameter<double>("scales.yaw", 1.0);
+    declare_parameter<double>("scales.heave", 1.0);
+    declare_parameter<double>("scales.roll", 1.0);
+    declare_parameter<double>("scales.pitch", 1.0);
     declare_parameter<double>("deadzone", 0.05);
 
     rate_ = get_parameter("rate").as_double();
     joy_topic_ = get_parameter("joy_topic").as_string();
     controller_switch_service_ = get_parameter("controller_switch_service").as_string();
+    body_force_controller_name_ = get_parameter("body_force_controller.name").as_string();
     stabilize_controller_name_ = get_parameter("stabilize_controller.name").as_string();
     feedforward_topic_ = get_parameter("stabilize_controller.feedforward_topic").as_string();
-    toggle_stabilize_button_ = get_parameter("buttons.toggle_stabilize").as_int();
+    lb_button_ = get_parameter("buttons.lb").as_int();
+    rb_button_ = get_parameter("buttons.rb").as_int();
+    y_button_ = get_parameter("buttons.y").as_int();
     surge_axis_ = get_parameter("axes.surge").as_int();
     sway_axis_ = get_parameter("axes.sway").as_int();
-    heave_axis_ = get_parameter("axes.heave").as_int();
     yaw_axis_ = get_parameter("axes.yaw").as_int();
+    heave_axis_ = get_parameter("axes.heave").as_int();
+    roll_axis_ = get_parameter("axes.roll").as_int();
+    pitch_axis_ = get_parameter("axes.pitch").as_int();
     surge_scale_ = get_parameter("scales.surge").as_double();
     sway_scale_ = get_parameter("scales.sway").as_double();
-    heave_scale_ = get_parameter("scales.heave").as_double();
     yaw_scale_ = get_parameter("scales.yaw").as_double();
+    heave_scale_ = get_parameter("scales.heave").as_double();
+    roll_scale_ = get_parameter("scales.roll").as_double();
+    pitch_scale_ = get_parameter("scales.pitch").as_double();
     deadzone_ = std::max(0.0, get_parameter("deadzone").as_double());
 
     if (rate_ <= 0.0) {
@@ -74,9 +88,9 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "Teleop ready. Toggle button=%d, stabilize controller='%s', feedforward topic='%s'.",
-      toggle_stabilize_button_,
+      "Teleop ready. RB+Y toggles '%s', RB+LB toggles '%s', feedforward topic='%s'.",
       stabilize_controller_name_.c_str(),
+      body_force_controller_name_.c_str(),
       feedforward_topic_.c_str());
   }
 
@@ -89,23 +103,36 @@ private:
   {
     last_joy_msg_ = msg;
 
-    if (!isValidButtonIndex(msg->buttons, toggle_stabilize_button_)) {
+    if (
+      !isValidButtonIndex(msg->buttons, lb_button_) ||
+      !isValidButtonIndex(msg->buttons, rb_button_) ||
+      !isValidButtonIndex(msg->buttons, y_button_))
+    {
       RCLCPP_WARN_THROTTLE(
         get_logger(),
         *get_clock(),
         2000,
-        "Toggle button index %d is out of range for the current joystick message.",
-        toggle_stabilize_button_);
+        "Configured button indices are out of range for the current joystick message.");
       return;
     }
 
-    const bool button_pressed = msg->buttons[static_cast<size_t>(toggle_stabilize_button_)] != 0;
+    const bool lb_pressed = msg->buttons[static_cast<size_t>(lb_button_)] != 0;
+    const bool rb_pressed = msg->buttons[static_cast<size_t>(rb_button_)] != 0;
+    const bool y_pressed = msg->buttons[static_cast<size_t>(y_button_)] != 0;
 
-    if (button_pressed && !last_toggle_button_state_) {
+    const bool stabilize_combo_pressed = rb_pressed && y_pressed;
+    const bool body_force_combo_pressed = rb_pressed && lb_pressed;
+
+    if (stabilize_combo_pressed && !last_stabilize_combo_state_) {
       requestStabilizeState(!stabilize_enabled_);
     }
 
-    last_toggle_button_state_ = button_pressed;
+    if (body_force_combo_pressed && !last_body_force_combo_state_) {
+      requestBodyForceState(!body_force_enabled_);
+    }
+
+    last_stabilize_combo_state_ = stabilize_combo_pressed;
+    last_body_force_combo_state_ = body_force_combo_pressed;
   }
 
   void timerCallback()
@@ -118,14 +145,113 @@ private:
     if (last_joy_msg_ != nullptr) {
       cmd.linear.x = readAxis(last_joy_msg_->axes, surge_axis_) * surge_scale_;
       cmd.linear.y = readAxis(last_joy_msg_->axes, sway_axis_) * sway_scale_;
-      cmd.linear.z = readAxis(last_joy_msg_->axes, heave_axis_) * heave_scale_;
-      cmd.angular.z = readAxis(last_joy_msg_->axes, yaw_axis_) * yaw_scale_;
+      const bool lb_pressed = isValidButtonIndex(last_joy_msg_->buttons, lb_button_) &&
+        last_joy_msg_->buttons[static_cast<size_t>(lb_button_)] != 0;
+
+      if (lb_pressed) {
+        cmd.angular.x = readAxis(last_joy_msg_->axes, roll_axis_) * roll_scale_;
+        cmd.angular.y = readAxis(last_joy_msg_->axes, pitch_axis_) * pitch_scale_;
+      } else {
+        cmd.linear.z = readAxis(last_joy_msg_->axes, heave_axis_) * heave_scale_;
+        cmd.angular.z = readAxis(last_joy_msg_->axes, yaw_axis_) * yaw_scale_;
+      }
     }
 
     feedforward_pub_->publish(cmd);
   }
 
   void requestStabilizeState(bool enable)
+  {
+    std::vector<std::string> activate_controllers;
+    std::vector<std::string> deactivate_controllers;
+
+    if (enable) {
+      if (!body_force_enabled_) {
+        activate_controllers.push_back(body_force_controller_name_);
+      }
+      activate_controllers.push_back(stabilize_controller_name_);
+    } else {
+      deactivate_controllers.push_back(stabilize_controller_name_);
+    }
+
+    sendSwitchRequest(
+      activate_controllers,
+      deactivate_controllers,
+      [this, enable](rclcpp::Client<SwitchControllerSrv>::SharedFuture future_response)
+      {
+        const auto response = future_response.get();
+        if (!response->ok) {
+          RCLCPP_ERROR(
+            get_logger(),
+            "Failed to %s controller '%s'.",
+            enable ? "activate" : "deactivate",
+            stabilize_controller_name_.c_str());
+          return;
+        }
+
+        if (enable) {
+          body_force_enabled_ = true;
+        }
+        stabilize_enabled_ = enable;
+        RCLCPP_INFO(
+          get_logger(),
+          "Controller '%s' %s.",
+          stabilize_controller_name_.c_str(),
+          stabilize_enabled_ ? "activated" : "deactivated");
+
+        if (!stabilize_enabled_) {
+          feedforward_pub_->publish(TwistMsg{});
+        }
+      });
+  }
+
+  void requestBodyForceState(bool enable)
+  {
+    std::vector<std::string> activate_controllers;
+    std::vector<std::string> deactivate_controllers;
+
+    if (enable) {
+      activate_controllers.push_back(body_force_controller_name_);
+    } else {
+      if (stabilize_enabled_) {
+        deactivate_controllers.push_back(stabilize_controller_name_);
+      }
+      deactivate_controllers.push_back(body_force_controller_name_);
+    }
+
+    sendSwitchRequest(
+      activate_controllers,
+      deactivate_controllers,
+      [this, enable](rclcpp::Client<SwitchControllerSrv>::SharedFuture future_response)
+      {
+        const auto response = future_response.get();
+        if (!response->ok) {
+          RCLCPP_ERROR(
+            get_logger(),
+            "Failed to %s controller '%s'.",
+            enable ? "activate" : "deactivate",
+            body_force_controller_name_.c_str());
+          return;
+        }
+
+        body_force_enabled_ = enable;
+        if (!enable) {
+          stabilize_enabled_ = false;
+          feedforward_pub_->publish(TwistMsg{});
+        }
+
+        RCLCPP_INFO(
+          get_logger(),
+          "Controller '%s' %s.",
+          body_force_controller_name_.c_str(),
+          body_force_enabled_ ? "activated" : "deactivated");
+      });
+  }
+
+  void sendSwitchRequest(
+    const std::vector<std::string> & activate_controllers,
+    const std::vector<std::string> & deactivate_controllers,
+    std::function<void(rclcpp::Client<SwitchControllerSrv>::SharedFuture)> response_callback)
   {
     if (switch_in_progress_) {
       RCLCPP_WARN(get_logger(), "Ignoring toggle request because a switch is already in progress.");
@@ -141,11 +267,8 @@ private:
     }
 
     auto request = std::make_shared<SwitchControllerSrv::Request>();
-    if (enable) {
-      request->activate_controllers.push_back(stabilize_controller_name_);
-    } else {
-      request->deactivate_controllers.push_back(stabilize_controller_name_);
-    }
+    request->activate_controllers = activate_controllers;
+    request->deactivate_controllers = deactivate_controllers;
     request->strictness = SwitchControllerSrv::Request::STRICT;
     request->activate_asap = true;
     request->timeout.sec = 2;
@@ -154,29 +277,10 @@ private:
     switch_in_progress_ = true;
     const auto future = switch_controller_client_->async_send_request(
       request,
-      [this, enable](rclcpp::Client<SwitchControllerSrv>::SharedFuture future_response)
+      [this, response_callback](rclcpp::Client<SwitchControllerSrv>::SharedFuture future_response)
       {
         switch_in_progress_ = false;
-        const auto response = future_response.get();
-        if (!response->ok) {
-          RCLCPP_ERROR(
-            get_logger(),
-            "Failed to %s controller '%s'.",
-            enable ? "activate" : "deactivate",
-            stabilize_controller_name_.c_str());
-          return;
-        }
-
-        stabilize_enabled_ = enable;
-        RCLCPP_INFO(
-          get_logger(),
-          "Controller '%s' %s.",
-          stabilize_controller_name_.c_str(),
-          stabilize_enabled_ ? "activated" : "deactivated");
-
-        if (!stabilize_enabled_) {
-          feedforward_pub_->publish(TwistMsg{});
-        }
+        response_callback(future_response);
       });
 
     (void)future;
@@ -207,20 +311,29 @@ private:
   double sway_scale_{1.0};
   double heave_scale_{1.0};
   double yaw_scale_{1.0};
+  double roll_scale_{1.0};
+  double pitch_scale_{1.0};
   double deadzone_{0.05};
 
-  int toggle_stabilize_button_{3};
+  int lb_button_{4};
+  int rb_button_{5};
+  int y_button_{3};
   int surge_axis_{1};
   int sway_axis_{0};
-  int heave_axis_{4};
   int yaw_axis_{3};
+  int heave_axis_{4};
+  int roll_axis_{3};
+  int pitch_axis_{4};
 
+  bool body_force_enabled_{false};
   bool stabilize_enabled_{false};
-  bool last_toggle_button_state_{false};
+  bool last_stabilize_combo_state_{false};
+  bool last_body_force_combo_state_{false};
   bool switch_in_progress_{false};
 
   std::string joy_topic_;
   std::string controller_switch_service_;
+  std::string body_force_controller_name_;
   std::string stabilize_controller_name_;
   std::string feedforward_topic_;
 
