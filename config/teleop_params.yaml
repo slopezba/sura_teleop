@@ -13,7 +13,14 @@ sura_teleop:
       enable_roll_pitch_service: /stabilize_controller/enable_roll_pitch
       disable_roll_pitch_service: /stabilize_controller/disable_roll_pitch
 
+    depth_hold_controller:
+      name: depth_hold_controller
+      feedforward_topic: /depth_hold_controller/feedforward
+      enable_roll_pitch_service: /depth_hold_controller/enable_roll_pitch
+      disable_roll_pitch_service: /depth_hold_controller/disable_roll_pitch
+
     buttons:
+      a: 0
       lb: 4
       rb: 5
       y: 3
