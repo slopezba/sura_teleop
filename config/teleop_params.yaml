@@ -7,6 +7,10 @@ sura_teleop:
     body_force_controller:
       name: body_force_controller
 
+    body_velocity_controller:
+      name: body_velocity_controller
+      setpoint_topic: /body_velocity_controller/setpoint
+
     stabilize_controller:
       name: stabilize_controller
       feedforward_topic: /stabilize_controller/feedforward
@@ -21,6 +25,7 @@ sura_teleop:
 
     buttons:
       a: 0
+      x: 2
       lb: 4
       rb: 5
       y: 3
@@ -36,10 +41,10 @@ sura_teleop:
 
     scales:
       surge: 1.0
-      sway: 1.0
+      sway: -1.0
       heave: 1.0
-      yaw: 1.0
-      roll: 1.0
-      pitch: 1.0
+      yaw: -1.0
+      roll: -1.0
+      pitch: -1.0
 
     deadzone: 0.05
