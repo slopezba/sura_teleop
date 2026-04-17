@@ -16,6 +16,12 @@ sura_teleop:
       feedforward_topic: /stabilize_controller/feedforward
       enable_roll_pitch_service: /stabilize_controller/enable_roll_pitch
       disable_roll_pitch_service: /stabilize_controller/disable_roll_pitch
+      feedforward_gain_x: 20.0
+      feedforward_gain_y: 20.0
+      feedforward_gain_z: 90.0
+      feedforward_gain_roll: 20.0
+      feedforward_gain_pitch: 20.0
+      feedforward_gain_yaw: 1.0
 
     depth_hold_controller:
       name: depth_hold_controller

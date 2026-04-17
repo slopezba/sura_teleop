@@ -8,6 +8,7 @@
 
 #include "controller_manager_msgs/srv/switch_controller.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/wrench.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joy.hpp"
 #include "std_srvs/srv/trigger.hpp"
@@ -30,6 +31,12 @@ public:
     declare_parameter<std::string>(
       "stabilize_controller.feedforward_topic",
       "/stabilize_controller/feedforward");
+    declare_parameter<double>("stabilize_controller.feedforward_gain_x", 20.0);
+    declare_parameter<double>("stabilize_controller.feedforward_gain_y", 20.0);
+    declare_parameter<double>("stabilize_controller.feedforward_gain_z", 90.0);
+    declare_parameter<double>("stabilize_controller.feedforward_gain_roll", 20.0);
+    declare_parameter<double>("stabilize_controller.feedforward_gain_pitch", 20.0);
+    declare_parameter<double>("stabilize_controller.feedforward_gain_yaw", 1.0);
     declare_parameter<std::string>(
       "stabilize_controller.enable_roll_pitch_service",
       "/stabilize_controller/enable_roll_pitch");
@@ -76,6 +83,18 @@ public:
     stabilize_controller_name_ = get_parameter("stabilize_controller.name").as_string();
     stabilize_feedforward_topic_ =
       get_parameter("stabilize_controller.feedforward_topic").as_string();
+    stabilize_feedforward_gain_x_ =
+      get_parameter("stabilize_controller.feedforward_gain_x").as_double();
+    stabilize_feedforward_gain_y_ =
+      get_parameter("stabilize_controller.feedforward_gain_y").as_double();
+    stabilize_feedforward_gain_z_ =
+      get_parameter("stabilize_controller.feedforward_gain_z").as_double();
+    stabilize_feedforward_gain_roll_ =
+      get_parameter("stabilize_controller.feedforward_gain_roll").as_double();
+    stabilize_feedforward_gain_pitch_ =
+      get_parameter("stabilize_controller.feedforward_gain_pitch").as_double();
+    stabilize_feedforward_gain_yaw_ =
+      get_parameter("stabilize_controller.feedforward_gain_yaw").as_double();
     stabilize_enable_roll_pitch_service_name_ =
       get_parameter("stabilize_controller.enable_roll_pitch_service").as_string();
     stabilize_disable_roll_pitch_service_name_ =
@@ -117,7 +136,7 @@ public:
       rclcpp::SystemDefaultsQoS(),
       std::bind(&CirtesubTeleop::joyCallback, this, std::placeholders::_1));
 
-    updateFeedforwardPublisher(stabilize_feedforward_topic_);
+    updateWrenchPublisher(stabilize_feedforward_topic_);
 
     switch_controller_client_ =
       create_client<controller_manager_msgs::srv::SwitchController>(controller_switch_service_);
@@ -141,26 +160,47 @@ public:
       stabilize_controller_name_.c_str(),
       depth_hold_controller_name_.c_str(),
       body_force_controller_name_.c_str(),
-      feedforward_topic_.c_str());
+      active_command_topic_.c_str());
   }
 
 private:
   using JoyMsg = sensor_msgs::msg::Joy;
   using TwistMsg = geometry_msgs::msg::Twist;
+  using WrenchMsg = geometry_msgs::msg::Wrench;
   using SwitchControllerSrv = controller_manager_msgs::srv::SwitchController;
 
-  void updateFeedforwardPublisher(const std::string & topic_name)
+  enum class CommandOutputMode
   {
-    feedforward_topic_ = topic_name;
-    feedforward_pub_ = create_publisher<TwistMsg>(
-      feedforward_topic_,
+    None,
+    Twist,
+    Wrench
+  };
+
+  void updateTwistPublisher(const std::string & topic_name)
+  {
+    active_command_topic_ = topic_name;
+    twist_command_pub_ = create_publisher<TwistMsg>(
+      active_command_topic_,
       rclcpp::SystemDefaultsQoS());
+    command_output_mode_ = CommandOutputMode::Twist;
+  }
+
+  void updateWrenchPublisher(const std::string & topic_name)
+  {
+    active_command_topic_ = topic_name;
+    wrench_command_pub_ = create_publisher<WrenchMsg>(
+      active_command_topic_,
+      rclcpp::SystemDefaultsQoS());
+    command_output_mode_ = CommandOutputMode::Wrench;
   }
 
   void publishZeroFeedforward()
   {
-    if (feedforward_pub_) {
-      feedforward_pub_->publish(TwistMsg{});
+    if (twist_command_pub_) {
+      twist_command_pub_->publish(TwistMsg{});
+    }
+    if (wrench_command_pub_) {
+      wrench_command_pub_->publish(WrenchMsg{});
     }
   }
 
@@ -224,23 +264,41 @@ private:
       return;
     }
 
-    TwistMsg cmd;
+    TwistMsg twist_cmd;
+    WrenchMsg wrench_cmd;
     if (last_joy_msg_ != nullptr) {
       const bool lb_pressed = isValidButtonIndex(last_joy_msg_->buttons, lb_button_) &&
         last_joy_msg_->buttons[static_cast<size_t>(lb_button_)] != 0;
 
       if (lb_pressed) {
-        cmd.angular.x = readAxis(last_joy_msg_->axes, roll_axis_) * roll_scale_;
-        cmd.angular.y = readAxis(last_joy_msg_->axes, pitch_axis_) * pitch_scale_;
+        twist_cmd.angular.x = readAxis(last_joy_msg_->axes, roll_axis_) * roll_scale_;
+        twist_cmd.angular.y = readAxis(last_joy_msg_->axes, pitch_axis_) * pitch_scale_;
+        wrench_cmd.torque.x = twist_cmd.angular.x;
+        wrench_cmd.torque.y = twist_cmd.angular.y;
       } else {
-        cmd.linear.x = readAxis(last_joy_msg_->axes, surge_axis_) * surge_scale_;
-        cmd.linear.y = readAxis(last_joy_msg_->axes, sway_axis_) * sway_scale_;
-        cmd.linear.z = -readAxis(last_joy_msg_->axes, heave_axis_) * heave_scale_;
-        cmd.angular.z = readAxis(last_joy_msg_->axes, yaw_axis_) * yaw_scale_;
+        twist_cmd.linear.x = readAxis(last_joy_msg_->axes, surge_axis_) * surge_scale_;
+        twist_cmd.linear.y = readAxis(last_joy_msg_->axes, sway_axis_) * sway_scale_;
+        twist_cmd.linear.z = -readAxis(last_joy_msg_->axes, heave_axis_) * heave_scale_;
+        twist_cmd.angular.z = readAxis(last_joy_msg_->axes, yaw_axis_) * yaw_scale_;
+        wrench_cmd.force.x = twist_cmd.linear.x;
+        wrench_cmd.force.y = twist_cmd.linear.y;
+        wrench_cmd.force.z = twist_cmd.linear.z;
+        wrench_cmd.torque.z = twist_cmd.angular.z;
       }
     }
 
-    feedforward_pub_->publish(cmd);
+    wrench_cmd.force.x *= stabilize_feedforward_gain_x_;
+    wrench_cmd.force.y *= stabilize_feedforward_gain_y_;
+    wrench_cmd.force.z *= stabilize_feedforward_gain_z_;
+    wrench_cmd.torque.x *= stabilize_feedforward_gain_roll_;
+    wrench_cmd.torque.y *= stabilize_feedforward_gain_pitch_;
+    wrench_cmd.torque.z *= stabilize_feedforward_gain_yaw_;
+
+    if (command_output_mode_ == CommandOutputMode::Twist && twist_command_pub_) {
+      twist_command_pub_->publish(twist_cmd);
+    } else if (command_output_mode_ == CommandOutputMode::Wrench && wrench_command_pub_) {
+      wrench_command_pub_->publish(wrench_cmd);
+    }
   }
 
   void requestStabilizeState(bool enable)
@@ -252,14 +310,14 @@ private:
       if (!body_force_enabled_) {
         activate_controllers.push_back(body_force_controller_name_);
       }
-      if (body_velocity_enabled_) {
-        deactivate_controllers.push_back(body_velocity_controller_name_);
-      }
       if (depth_hold_enabled_) {
         deactivate_controllers.push_back(depth_hold_controller_name_);
       }
       activate_controllers.push_back(stabilize_controller_name_);
     } else {
+      if (body_velocity_enabled_) {
+        deactivate_controllers.push_back(body_velocity_controller_name_);
+      }
       deactivate_controllers.push_back(stabilize_controller_name_);
     }
 
@@ -280,9 +338,10 @@ private:
 
         if (enable) {
           body_force_enabled_ = true;
-          body_velocity_enabled_ = false;
           depth_hold_enabled_ = false;
-          updateFeedforwardPublisher(stabilize_feedforward_topic_);
+          updateWrenchPublisher(stabilize_feedforward_topic_);
+        } else {
+          body_velocity_enabled_ = false;
         }
         stabilize_enabled_ = enable;
         RCLCPP_INFO(
@@ -336,7 +395,7 @@ private:
           body_force_enabled_ = true;
           body_velocity_enabled_ = false;
           stabilize_enabled_ = false;
-          updateFeedforwardPublisher(depth_hold_feedforward_topic_);
+          updateTwistPublisher(depth_hold_feedforward_topic_);
         }
         depth_hold_enabled_ = enable;
         RCLCPP_INFO(
@@ -347,7 +406,7 @@ private:
 
         if (!depth_hold_enabled_) {
           publishZeroFeedforward();
-          updateFeedforwardPublisher(stabilize_feedforward_topic_);
+          updateWrenchPublisher(stabilize_feedforward_topic_);
         }
       });
   }
@@ -361,8 +420,8 @@ private:
       if (!body_force_enabled_) {
         activate_controllers.push_back(body_force_controller_name_);
       }
-      if (stabilize_enabled_) {
-        deactivate_controllers.push_back(stabilize_controller_name_);
+      if (!stabilize_enabled_) {
+        activate_controllers.push_back(stabilize_controller_name_);
       }
       if (depth_hold_enabled_) {
         deactivate_controllers.push_back(depth_hold_controller_name_);
@@ -389,9 +448,9 @@ private:
 
         if (enable) {
           body_force_enabled_ = true;
-          stabilize_enabled_ = false;
+          stabilize_enabled_ = true;
           depth_hold_enabled_ = false;
-          updateFeedforwardPublisher(body_velocity_setpoint_topic_);
+          updateTwistPublisher(body_velocity_setpoint_topic_);
         }
         body_velocity_enabled_ = enable;
         RCLCPP_INFO(
@@ -402,7 +461,8 @@ private:
 
         if (!body_velocity_enabled_) {
           publishZeroFeedforward();
-          updateFeedforwardPublisher(stabilize_feedforward_topic_);
+          stabilize_enabled_ = true;
+          updateWrenchPublisher(stabilize_feedforward_topic_);
         }
       });
   }
@@ -448,7 +508,7 @@ private:
           stabilize_enabled_ = false;
           depth_hold_enabled_ = false;
           publishZeroFeedforward();
-          updateFeedforwardPublisher(stabilize_feedforward_topic_);
+          updateWrenchPublisher(stabilize_feedforward_topic_);
         }
 
         RCLCPP_INFO(
@@ -634,7 +694,7 @@ private:
   std::string body_velocity_controller_name_;
   std::string stabilize_controller_name_;
   std::string depth_hold_controller_name_;
-  std::string feedforward_topic_;
+  std::string active_command_topic_;
   std::string body_velocity_setpoint_topic_;
   std::string stabilize_feedforward_topic_;
   std::string depth_hold_feedforward_topic_;
@@ -642,11 +702,19 @@ private:
   std::string stabilize_disable_roll_pitch_service_name_;
   std::string depth_hold_enable_roll_pitch_service_name_;
   std::string depth_hold_disable_roll_pitch_service_name_;
+  double stabilize_feedforward_gain_x_{20.0};
+  double stabilize_feedforward_gain_y_{20.0};
+  double stabilize_feedforward_gain_z_{90.0};
+  double stabilize_feedforward_gain_roll_{20.0};
+  double stabilize_feedforward_gain_pitch_{20.0};
+  double stabilize_feedforward_gain_yaw_{1.0};
 
   JoyMsg::SharedPtr last_joy_msg_;
+  CommandOutputMode command_output_mode_{CommandOutputMode::None};
 
   rclcpp::Subscription<JoyMsg>::SharedPtr joy_sub_;
-  rclcpp::Publisher<TwistMsg>::SharedPtr feedforward_pub_;
+  rclcpp::Publisher<TwistMsg>::SharedPtr twist_command_pub_;
+  rclcpp::Publisher<WrenchMsg>::SharedPtr wrench_command_pub_;
   rclcpp::Client<SwitchControllerSrv>::SharedPtr switch_controller_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr stabilize_enable_roll_pitch_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr stabilize_disable_roll_pitch_client_;
