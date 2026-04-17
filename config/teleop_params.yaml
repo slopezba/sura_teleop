@@ -11,6 +11,10 @@ sura_teleop:
       name: body_velocity_controller
       setpoint_topic: /body_velocity_controller/setpoint
 
+    position_hold_controller:
+      name: position_hold_controller
+      feedforward_topic: /position_hold_controller/feedforward
+
     stabilize_controller:
       name: stabilize_controller
       feedforward_topic: /stabilize_controller/feedforward
@@ -37,6 +41,7 @@ sura_teleop:
 
     buttons:
       a: 0
+      b: 1
       x: 2
       lb: 4
       rb: 5

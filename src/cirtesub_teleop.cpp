@@ -27,6 +27,10 @@ public:
     declare_parameter<std::string>(
       "body_velocity_controller.setpoint_topic",
       "/body_velocity_controller/setpoint");
+    declare_parameter<std::string>("position_hold_controller.name", "position_hold_controller");
+    declare_parameter<std::string>(
+      "position_hold_controller.feedforward_topic",
+      "/position_hold_controller/feedforward");
     declare_parameter<std::string>("stabilize_controller.name", "stabilize_controller");
     declare_parameter<std::string>(
       "stabilize_controller.feedforward_topic",
@@ -60,6 +64,7 @@ public:
       "depth_hold_controller.disable_roll_pitch_service",
       "/depth_hold_controller/disable_roll_pitch");
     declare_parameter<int>("buttons.a", 0);
+    declare_parameter<int>("buttons.b", 1);
     declare_parameter<int>("buttons.x", 2);
     declare_parameter<int>("buttons.lb", 4);
     declare_parameter<int>("buttons.rb", 5);
@@ -86,6 +91,9 @@ public:
     body_velocity_controller_name_ = get_parameter("body_velocity_controller.name").as_string();
     body_velocity_setpoint_topic_ =
       get_parameter("body_velocity_controller.setpoint_topic").as_string();
+    position_hold_controller_name_ = get_parameter("position_hold_controller.name").as_string();
+    position_hold_feedforward_topic_ =
+      get_parameter("position_hold_controller.feedforward_topic").as_string();
     stabilize_controller_name_ = get_parameter("stabilize_controller.name").as_string();
     stabilize_feedforward_topic_ =
       get_parameter("stabilize_controller.feedforward_topic").as_string();
@@ -125,6 +133,7 @@ public:
     depth_hold_disable_roll_pitch_service_name_ =
       get_parameter("depth_hold_controller.disable_roll_pitch_service").as_string();
     a_button_ = get_parameter("buttons.a").as_int();
+    b_button_ = get_parameter("buttons.b").as_int();
     x_button_ = get_parameter("buttons.x").as_int();
     lb_button_ = get_parameter("buttons.lb").as_int();
     rb_button_ = get_parameter("buttons.rb").as_int();
@@ -173,8 +182,9 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "Teleop ready. RB+X toggles '%s', RB+Y toggles '%s', RB+A toggles '%s', RB+LB toggles '%s', active command topic='%s'.",
+      "Teleop ready. RB+X toggles '%s', RB+B toggles '%s', RB+Y toggles '%s', RB+A toggles '%s', RB+LB toggles '%s', active command topic='%s'.",
       body_velocity_controller_name_.c_str(),
+      position_hold_controller_name_.c_str(),
       stabilize_controller_name_.c_str(),
       depth_hold_controller_name_.c_str(),
       body_force_controller_name_.c_str(),
@@ -230,6 +240,7 @@ private:
 
     if (
       !isValidButtonIndex(msg->buttons, a_button_) ||
+      !isValidButtonIndex(msg->buttons, b_button_) ||
       !isValidButtonIndex(msg->buttons, x_button_) ||
       !isValidButtonIndex(msg->buttons, lb_button_) ||
       !isValidButtonIndex(msg->buttons, rb_button_) ||
@@ -244,18 +255,24 @@ private:
     }
 
     const bool a_pressed = msg->buttons[static_cast<size_t>(a_button_)] != 0;
+    const bool b_pressed = msg->buttons[static_cast<size_t>(b_button_)] != 0;
     const bool x_pressed = msg->buttons[static_cast<size_t>(x_button_)] != 0;
     const bool lb_pressed = msg->buttons[static_cast<size_t>(lb_button_)] != 0;
     const bool rb_pressed = msg->buttons[static_cast<size_t>(rb_button_)] != 0;
     const bool y_pressed = msg->buttons[static_cast<size_t>(y_button_)] != 0;
 
     const bool body_velocity_combo_pressed = rb_pressed && x_pressed;
+    const bool position_hold_combo_pressed = rb_pressed && b_pressed;
     const bool stabilize_combo_pressed = rb_pressed && y_pressed;
     const bool depth_hold_combo_pressed = rb_pressed && a_pressed;
     const bool body_force_combo_pressed = rb_pressed && lb_pressed;
 
     if (body_velocity_combo_pressed && !last_body_velocity_combo_state_) {
       requestBodyVelocityState(!body_velocity_enabled_);
+    }
+
+    if (position_hold_combo_pressed && !last_position_hold_combo_state_) {
+      requestPositionHoldState(!position_hold_enabled_);
     }
 
     if (stabilize_combo_pressed && !last_stabilize_combo_state_) {
@@ -273,6 +290,7 @@ private:
     processHatCommands(*msg);
 
     last_body_velocity_combo_state_ = body_velocity_combo_pressed;
+    last_position_hold_combo_state_ = position_hold_combo_pressed;
     last_stabilize_combo_state_ = stabilize_combo_pressed;
     last_depth_hold_combo_state_ = depth_hold_combo_pressed;
     last_body_force_combo_state_ = body_force_combo_pressed;
@@ -280,7 +298,9 @@ private:
 
   void timerCallback()
   {
-    if (!body_velocity_enabled_ && !stabilize_enabled_ && !depth_hold_enabled_) {
+    if (!body_velocity_enabled_ && !position_hold_enabled_ && !stabilize_enabled_ &&
+      !depth_hold_enabled_)
+    {
       return;
     }
 
@@ -317,7 +337,7 @@ private:
       double feedforward_gain_pitch = stabilize_feedforward_gain_pitch_;
       double feedforward_gain_yaw = stabilize_feedforward_gain_yaw_;
 
-      if (depth_hold_enabled_) {
+      if (depth_hold_enabled_ && !position_hold_enabled_) {
         feedforward_gain_x = depth_hold_feedforward_gain_x_;
         feedforward_gain_y = depth_hold_feedforward_gain_y_;
         feedforward_gain_z = depth_hold_feedforward_gain_z_;
@@ -346,6 +366,10 @@ private:
         activate_controllers.push_back(body_force_controller_name_);
       }
       if (body_velocity_enabled_) {
+        deactivate_controllers.push_back(body_velocity_controller_name_);
+      }
+      if (position_hold_enabled_) {
+        deactivate_controllers.push_back(position_hold_controller_name_);
         deactivate_controllers.push_back(body_velocity_controller_name_);
       }
       if (depth_hold_enabled_) {
@@ -377,6 +401,7 @@ private:
         if (enable) {
           body_force_enabled_ = true;
           body_velocity_enabled_ = false;
+          position_hold_enabled_ = false;
           depth_hold_enabled_ = false;
           updateWrenchPublisher(stabilize_feedforward_topic_);
         } else {
@@ -407,6 +432,10 @@ private:
       if (body_velocity_enabled_) {
         deactivate_controllers.push_back(body_velocity_controller_name_);
       }
+      if (position_hold_enabled_) {
+        deactivate_controllers.push_back(position_hold_controller_name_);
+        deactivate_controllers.push_back(body_velocity_controller_name_);
+      }
       if (stabilize_enabled_) {
         deactivate_controllers.push_back(stabilize_controller_name_);
       }
@@ -433,6 +462,7 @@ private:
         if (enable) {
           body_force_enabled_ = true;
           body_velocity_enabled_ = false;
+          position_hold_enabled_ = false;
           stabilize_enabled_ = false;
           updateWrenchPublisher(depth_hold_feedforward_topic_);
         }
@@ -459,13 +489,18 @@ private:
       if (!body_force_enabled_) {
         activate_controllers.push_back(body_force_controller_name_);
       }
+      if (position_hold_enabled_) {
+        deactivate_controllers.push_back(position_hold_controller_name_);
+      }
+      if (!position_hold_enabled_) {
+        activate_controllers.push_back(body_velocity_controller_name_);
+      }
       if (stabilize_enabled_) {
         deactivate_controllers.push_back(stabilize_controller_name_);
       }
       if (!depth_hold_enabled_) {
         activate_controllers.push_back(depth_hold_controller_name_);
       }
-      activate_controllers.push_back(body_velocity_controller_name_);
     } else {
       deactivate_controllers.push_back(body_velocity_controller_name_);
     }
@@ -488,6 +523,7 @@ private:
         if (enable) {
           body_force_enabled_ = true;
           stabilize_enabled_ = false;
+          position_hold_enabled_ = false;
           depth_hold_enabled_ = true;
           updateTwistPublisher(body_velocity_setpoint_topic_);
         }
@@ -506,6 +542,67 @@ private:
       });
   }
 
+  void requestPositionHoldState(bool enable)
+  {
+    std::vector<std::string> activate_controllers;
+    std::vector<std::string> deactivate_controllers;
+
+    if (enable) {
+      if (!body_force_enabled_) {
+        activate_controllers.push_back(body_force_controller_name_);
+      }
+      if (stabilize_enabled_) {
+        deactivate_controllers.push_back(stabilize_controller_name_);
+      }
+      if (!depth_hold_enabled_) {
+        activate_controllers.push_back(depth_hold_controller_name_);
+      }
+      if (!body_velocity_enabled_) {
+        activate_controllers.push_back(body_velocity_controller_name_);
+      }
+      activate_controllers.push_back(position_hold_controller_name_);
+    } else {
+      deactivate_controllers.push_back(position_hold_controller_name_);
+      deactivate_controllers.push_back(body_velocity_controller_name_);
+    }
+
+    sendSwitchRequest(
+      activate_controllers,
+      deactivate_controllers,
+      [this, enable](rclcpp::Client<SwitchControllerSrv>::SharedFuture future_response)
+      {
+        const auto response = future_response.get();
+        if (!response->ok) {
+          RCLCPP_ERROR(
+            get_logger(),
+            "Failed to %s controller '%s'.",
+            enable ? "activate" : "deactivate",
+            position_hold_controller_name_.c_str());
+          return;
+        }
+
+        if (enable) {
+          body_force_enabled_ = true;
+          body_velocity_enabled_ = false;
+          stabilize_enabled_ = false;
+          depth_hold_enabled_ = true;
+          position_hold_enabled_ = true;
+          updateTwistPublisher(position_hold_feedforward_topic_);
+        } else {
+          position_hold_enabled_ = false;
+          publishZeroFeedforward();
+          depth_hold_enabled_ = true;
+          updateWrenchPublisher(depth_hold_feedforward_topic_);
+        }
+
+        RCLCPP_INFO(
+          get_logger(),
+          "Controller '%s' %s.",
+          position_hold_controller_name_.c_str(),
+          position_hold_enabled_ ? "activated" : "deactivated");
+      });
+  }
+
   void requestBodyForceState(bool enable)
   {
     std::vector<std::string> activate_controllers;
@@ -515,6 +612,10 @@ private:
       activate_controllers.push_back(body_force_controller_name_);
     } else {
       if (body_velocity_enabled_) {
+        deactivate_controllers.push_back(body_velocity_controller_name_);
+      }
+      if (position_hold_enabled_) {
+        deactivate_controllers.push_back(position_hold_controller_name_);
         deactivate_controllers.push_back(body_velocity_controller_name_);
       }
       if (stabilize_enabled_) {
@@ -544,6 +645,7 @@ private:
         body_force_enabled_ = enable;
         if (!enable) {
           body_velocity_enabled_ = false;
+          position_hold_enabled_ = false;
           stabilize_enabled_ = false;
           depth_hold_enabled_ = false;
           publishZeroFeedforward();
@@ -706,6 +808,7 @@ private:
   int lb_button_{4};
   int rb_button_{5};
   int a_button_{0};
+  int b_button_{1};
   int x_button_{2};
   int y_button_{3};
   int hat_vertical_axis_{7};
@@ -718,9 +821,11 @@ private:
 
   bool body_force_enabled_{false};
   bool body_velocity_enabled_{false};
+  bool position_hold_enabled_{false};
   bool stabilize_enabled_{false};
   bool depth_hold_enabled_{false};
   bool last_body_velocity_combo_state_{false};
+  bool last_position_hold_combo_state_{false};
   bool last_stabilize_combo_state_{false};
   bool last_depth_hold_combo_state_{false};
   bool last_body_force_combo_state_{false};
@@ -731,10 +836,12 @@ private:
   std::string controller_switch_service_;
   std::string body_force_controller_name_;
   std::string body_velocity_controller_name_;
+  std::string position_hold_controller_name_;
   std::string stabilize_controller_name_;
   std::string depth_hold_controller_name_;
   std::string active_command_topic_;
   std::string body_velocity_setpoint_topic_;
+  std::string position_hold_feedforward_topic_;
   std::string stabilize_feedforward_topic_;
   std::string depth_hold_feedforward_topic_;
   std::string stabilize_enable_roll_pitch_service_name_;
