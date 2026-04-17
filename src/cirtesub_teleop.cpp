@@ -47,6 +47,12 @@ public:
     declare_parameter<std::string>(
       "depth_hold_controller.feedforward_topic",
       "/depth_hold_controller/feedforward");
+    declare_parameter<double>("depth_hold_controller.feedforward_gain_x", 20.0);
+    declare_parameter<double>("depth_hold_controller.feedforward_gain_y", 20.0);
+    declare_parameter<double>("depth_hold_controller.feedforward_gain_z", 90.0);
+    declare_parameter<double>("depth_hold_controller.feedforward_gain_roll", 20.0);
+    declare_parameter<double>("depth_hold_controller.feedforward_gain_pitch", 20.0);
+    declare_parameter<double>("depth_hold_controller.feedforward_gain_yaw", 1.0);
     declare_parameter<std::string>(
       "depth_hold_controller.enable_roll_pitch_service",
       "/depth_hold_controller/enable_roll_pitch");
@@ -102,6 +108,18 @@ public:
     depth_hold_controller_name_ = get_parameter("depth_hold_controller.name").as_string();
     depth_hold_feedforward_topic_ =
       get_parameter("depth_hold_controller.feedforward_topic").as_string();
+    depth_hold_feedforward_gain_x_ =
+      get_parameter("depth_hold_controller.feedforward_gain_x").as_double();
+    depth_hold_feedforward_gain_y_ =
+      get_parameter("depth_hold_controller.feedforward_gain_y").as_double();
+    depth_hold_feedforward_gain_z_ =
+      get_parameter("depth_hold_controller.feedforward_gain_z").as_double();
+    depth_hold_feedforward_gain_roll_ =
+      get_parameter("depth_hold_controller.feedforward_gain_roll").as_double();
+    depth_hold_feedforward_gain_pitch_ =
+      get_parameter("depth_hold_controller.feedforward_gain_pitch").as_double();
+    depth_hold_feedforward_gain_yaw_ =
+      get_parameter("depth_hold_controller.feedforward_gain_yaw").as_double();
     depth_hold_enable_roll_pitch_service_name_ =
       get_parameter("depth_hold_controller.enable_roll_pitch_service").as_string();
     depth_hold_disable_roll_pitch_service_name_ =
@@ -179,6 +197,7 @@ private:
   void updateTwistPublisher(const std::string & topic_name)
   {
     active_command_topic_ = topic_name;
+    wrench_command_pub_.reset();
     twist_command_pub_ = create_publisher<TwistMsg>(
       active_command_topic_,
       rclcpp::SystemDefaultsQoS());
@@ -188,6 +207,7 @@ private:
   void updateWrenchPublisher(const std::string & topic_name)
   {
     active_command_topic_ = topic_name;
+    twist_command_pub_.reset();
     wrench_command_pub_ = create_publisher<WrenchMsg>(
       active_command_topic_,
       rclcpp::SystemDefaultsQoS());
@@ -196,10 +216,10 @@ private:
 
   void publishZeroFeedforward()
   {
-    if (twist_command_pub_) {
+    if (command_output_mode_ == CommandOutputMode::Twist && twist_command_pub_) {
       twist_command_pub_->publish(TwistMsg{});
     }
-    if (wrench_command_pub_) {
+    if (command_output_mode_ == CommandOutputMode::Wrench && wrench_command_pub_) {
       wrench_command_pub_->publish(WrenchMsg{});
     }
   }
@@ -287,16 +307,31 @@ private:
       }
     }
 
-    wrench_cmd.force.x *= stabilize_feedforward_gain_x_;
-    wrench_cmd.force.y *= stabilize_feedforward_gain_y_;
-    wrench_cmd.force.z *= stabilize_feedforward_gain_z_;
-    wrench_cmd.torque.x *= stabilize_feedforward_gain_roll_;
-    wrench_cmd.torque.y *= stabilize_feedforward_gain_pitch_;
-    wrench_cmd.torque.z *= stabilize_feedforward_gain_yaw_;
-
     if (command_output_mode_ == CommandOutputMode::Twist && twist_command_pub_) {
       twist_command_pub_->publish(twist_cmd);
     } else if (command_output_mode_ == CommandOutputMode::Wrench && wrench_command_pub_) {
+      double feedforward_gain_x = stabilize_feedforward_gain_x_;
+      double feedforward_gain_y = stabilize_feedforward_gain_y_;
+      double feedforward_gain_z = stabilize_feedforward_gain_z_;
+      double feedforward_gain_roll = stabilize_feedforward_gain_roll_;
+      double feedforward_gain_pitch = stabilize_feedforward_gain_pitch_;
+      double feedforward_gain_yaw = stabilize_feedforward_gain_yaw_;
+
+      if (depth_hold_enabled_) {
+        feedforward_gain_x = depth_hold_feedforward_gain_x_;
+        feedforward_gain_y = depth_hold_feedforward_gain_y_;
+        feedforward_gain_z = depth_hold_feedforward_gain_z_;
+        feedforward_gain_roll = depth_hold_feedforward_gain_roll_;
+        feedforward_gain_pitch = depth_hold_feedforward_gain_pitch_;
+        feedforward_gain_yaw = depth_hold_feedforward_gain_yaw_;
+      }
+
+      wrench_cmd.force.x *= feedforward_gain_x;
+      wrench_cmd.force.y *= feedforward_gain_y;
+      wrench_cmd.force.z *= feedforward_gain_z;
+      wrench_cmd.torque.x *= feedforward_gain_roll;
+      wrench_cmd.torque.y *= feedforward_gain_pitch;
+      wrench_cmd.torque.z *= feedforward_gain_yaw;
       wrench_command_pub_->publish(wrench_cmd);
     }
   }
@@ -309,6 +344,9 @@ private:
     if (enable) {
       if (!body_force_enabled_) {
         activate_controllers.push_back(body_force_controller_name_);
+      }
+      if (body_velocity_enabled_) {
+        deactivate_controllers.push_back(body_velocity_controller_name_);
       }
       if (depth_hold_enabled_) {
         deactivate_controllers.push_back(depth_hold_controller_name_);
@@ -338,6 +376,7 @@ private:
 
         if (enable) {
           body_force_enabled_ = true;
+          body_velocity_enabled_ = false;
           depth_hold_enabled_ = false;
           updateWrenchPublisher(stabilize_feedforward_topic_);
         } else {
@@ -395,7 +434,7 @@ private:
           body_force_enabled_ = true;
           body_velocity_enabled_ = false;
           stabilize_enabled_ = false;
-          updateTwistPublisher(depth_hold_feedforward_topic_);
+          updateWrenchPublisher(depth_hold_feedforward_topic_);
         }
         depth_hold_enabled_ = enable;
         RCLCPP_INFO(
@@ -420,11 +459,11 @@ private:
       if (!body_force_enabled_) {
         activate_controllers.push_back(body_force_controller_name_);
       }
-      if (!stabilize_enabled_) {
-        activate_controllers.push_back(stabilize_controller_name_);
+      if (stabilize_enabled_) {
+        deactivate_controllers.push_back(stabilize_controller_name_);
       }
-      if (depth_hold_enabled_) {
-        deactivate_controllers.push_back(depth_hold_controller_name_);
+      if (!depth_hold_enabled_) {
+        activate_controllers.push_back(depth_hold_controller_name_);
       }
       activate_controllers.push_back(body_velocity_controller_name_);
     } else {
@@ -448,8 +487,8 @@ private:
 
         if (enable) {
           body_force_enabled_ = true;
-          stabilize_enabled_ = true;
-          depth_hold_enabled_ = false;
+          stabilize_enabled_ = false;
+          depth_hold_enabled_ = true;
           updateTwistPublisher(body_velocity_setpoint_topic_);
         }
         body_velocity_enabled_ = enable;
@@ -461,8 +500,8 @@ private:
 
         if (!body_velocity_enabled_) {
           publishZeroFeedforward();
-          stabilize_enabled_ = true;
-          updateWrenchPublisher(stabilize_feedforward_topic_);
+          depth_hold_enabled_ = true;
+          updateWrenchPublisher(depth_hold_feedforward_topic_);
         }
       });
   }
@@ -708,6 +747,12 @@ private:
   double stabilize_feedforward_gain_roll_{20.0};
   double stabilize_feedforward_gain_pitch_{20.0};
   double stabilize_feedforward_gain_yaw_{1.0};
+  double depth_hold_feedforward_gain_x_{20.0};
+  double depth_hold_feedforward_gain_y_{20.0};
+  double depth_hold_feedforward_gain_z_{90.0};
+  double depth_hold_feedforward_gain_roll_{20.0};
+  double depth_hold_feedforward_gain_pitch_{20.0};
+  double depth_hold_feedforward_gain_yaw_{1.0};
 
   JoyMsg::SharedPtr last_joy_msg_;
   CommandOutputMode command_output_mode_{CommandOutputMode::None};
