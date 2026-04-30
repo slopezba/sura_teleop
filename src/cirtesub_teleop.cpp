@@ -24,21 +24,23 @@ public:
   {
     declare_parameter<double>("rate", 20.0);
     declare_parameter<std::string>("joy_topic", "/joy");
-    declare_parameter<std::string>("controller_switch_service", "/controller_manager/switch_controller");
-    declare_parameter<std::string>("controller_list_service", "/controller_manager/list_controllers");
-    declare_parameter<std::string>("body_force_controller.name", "body_force_controller");
-    declare_parameter<std::string>("body_velocity_controller.name", "body_velocity_controller");
+    declare_parameter<std::string>(
+      "controller_switch_service", "/cirtesub/controller/controller_manager/switch_controller");
+    declare_parameter<std::string>(
+      "controller_list_service", "/cirtesub/controller/controller_manager/list_controllers");
+    declare_parameter<std::string>("body_force_controller.name", "body_force");
+    declare_parameter<std::string>("body_velocity_controller.name", "body_velocity");
     declare_parameter<std::string>(
       "body_velocity_controller.setpoint_topic",
-      "/body_velocity_controller/setpoint");
-    declare_parameter<std::string>("position_hold_controller.name", "position_hold_controller");
+      "/cirtesub/controller/body_velocity/setpoint");
+    declare_parameter<std::string>("position_hold_controller.name", "position_hold");
     declare_parameter<std::string>(
       "position_hold_controller.feedforward_topic",
-      "/position_hold_controller/feedforward");
-    declare_parameter<std::string>("stabilize_controller.name", "stabilize_controller");
+      "/cirtesub/controller/position_hold/feedforward");
+    declare_parameter<std::string>("stabilize_controller.name", "stabilize");
     declare_parameter<std::string>(
       "stabilize_controller.feedforward_topic",
-      "/stabilize_controller/feedforward");
+      "/cirtesub/controller/stabilize/feedforward");
     declare_parameter<double>("stabilize_controller.feedforward_gain_x", 20.0);
     declare_parameter<double>("stabilize_controller.feedforward_gain_y", 20.0);
     declare_parameter<double>("stabilize_controller.feedforward_gain_z", 90.0);
@@ -47,14 +49,14 @@ public:
     declare_parameter<double>("stabilize_controller.feedforward_gain_yaw", 1.0);
     declare_parameter<std::string>(
       "stabilize_controller.enable_roll_pitch_service",
-      "/stabilize_controller/enable_roll_pitch");
+      "/cirtesub/controller/stabilize/enable_roll_pitch");
     declare_parameter<std::string>(
       "stabilize_controller.disable_roll_pitch_service",
-      "/stabilize_controller/disable_roll_pitch");
-    declare_parameter<std::string>("depth_hold_controller.name", "depth_hold_controller");
+      "/cirtesub/controller/stabilize/disable_roll_pitch");
+    declare_parameter<std::string>("depth_hold_controller.name", "depth_hold");
     declare_parameter<std::string>(
       "depth_hold_controller.feedforward_topic",
-      "/depth_hold_controller/feedforward");
+      "/cirtesub/controller/depth_hold/feedforward");
     declare_parameter<double>("depth_hold_controller.feedforward_gain_x", 20.0);
     declare_parameter<double>("depth_hold_controller.feedforward_gain_y", 20.0);
     declare_parameter<double>("depth_hold_controller.feedforward_gain_z", 90.0);
@@ -63,10 +65,10 @@ public:
     declare_parameter<double>("depth_hold_controller.feedforward_gain_yaw", 1.0);
     declare_parameter<std::string>(
       "depth_hold_controller.enable_roll_pitch_service",
-      "/depth_hold_controller/enable_roll_pitch");
+      "/cirtesub/controller/depth_hold/enable_roll_pitch");
     declare_parameter<std::string>(
       "depth_hold_controller.disable_roll_pitch_service",
-      "/depth_hold_controller/disable_roll_pitch");
+      "/cirtesub/controller/depth_hold/disable_roll_pitch");
     declare_parameter<int>("buttons.a", 0);
     declare_parameter<int>("buttons.b", 1);
     declare_parameter<int>("buttons.x", 2);
@@ -91,10 +93,10 @@ public:
       "alpha_right_forward_velocity_controller");
     declare_parameter<std::string>(
       "alpha_left_forward_velocity_controller.command_topic",
-      "/alpha_left_forward_velocity_controller/commands");
+      "/cirtesub/controller/alpha_left_forward_velocity_controller/commands");
     declare_parameter<std::string>(
       "alpha_right_forward_velocity_controller.command_topic",
-      "/alpha_right_forward_velocity_controller/commands");
+      "/cirtesub/controller/alpha_right_forward_velocity_controller/commands");
     declare_parameter<double>("alpha_forward_command_rate", 10.0);
     declare_parameter<double>("scales.surge", 1.0);
     declare_parameter<double>("scales.sway", 1.0);

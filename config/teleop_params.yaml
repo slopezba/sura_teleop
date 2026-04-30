@@ -2,24 +2,25 @@ sura_teleop:
   ros__parameters:
     rate: 20.0
     joy_topic: /joy
-    controller_switch_service: /controller_manager/switch_controller
+    controller_switch_service: /cirtesub/controller/controller_manager/switch_controller
+    controller_list_service: /cirtesub/controller/controller_manager/list_controllers
 
     body_force_controller:
-      name: body_force_controller
+      name: body_force
 
     body_velocity_controller:
-      name: body_velocity_controller
-      setpoint_topic: /body_velocity_controller/setpoint
+      name: body_velocity
+      setpoint_topic: /cirtesub/controller/body_velocity/setpoint
 
     position_hold_controller:
-      name: position_hold_controller
-      feedforward_topic: /position_hold_controller/feedforward
+      name: position_hold
+      feedforward_topic: /cirtesub/controller/position_hold/feedforward
 
     stabilize_controller:
-      name: stabilize_controller
-      feedforward_topic: /stabilize_controller/feedforward
-      enable_roll_pitch_service: /stabilize_controller/enable_roll_pitch
-      disable_roll_pitch_service: /stabilize_controller/disable_roll_pitch
+      name: stabilize
+      feedforward_topic: /cirtesub/controller/stabilize/feedforward
+      enable_roll_pitch_service: /cirtesub/controller/stabilize/enable_roll_pitch
+      disable_roll_pitch_service: /cirtesub/controller/stabilize/disable_roll_pitch
       feedforward_gain_x: 20.0
       feedforward_gain_y: 20.0
       feedforward_gain_z: 90.0
@@ -28,10 +29,10 @@ sura_teleop:
       feedforward_gain_yaw: 1.0
 
     depth_hold_controller:
-      name: depth_hold_controller
-      feedforward_topic: /depth_hold_controller/feedforward
-      enable_roll_pitch_service: /depth_hold_controller/enable_roll_pitch
-      disable_roll_pitch_service: /depth_hold_controller/disable_roll_pitch
+      name: depth_hold
+      feedforward_topic: /cirtesub/controller/depth_hold/feedforward
+      enable_roll_pitch_service: /cirtesub/controller/depth_hold/enable_roll_pitch
+      disable_roll_pitch_service: /cirtesub/controller/depth_hold/disable_roll_pitch
       feedforward_gain_x: 20.0
       feedforward_gain_y: 20.0
       feedforward_gain_z: 90.0
@@ -61,11 +62,11 @@ sura_teleop:
 
     alpha_left_forward_velocity_controller:
       name: alpha_left_forward_velocity_controller
-      command_topic: /alpha_left_forward_velocity_controller/commands
+      command_topic: /cirtesub/controller/alpha_left_forward_velocity_controller/commands
 
     alpha_right_forward_velocity_controller:
       name: alpha_right_forward_velocity_controller
-      command_topic: /alpha_right_forward_velocity_controller/commands
+      command_topic: /cirtesub/controller/alpha_right_forward_velocity_controller/commands
 
     alpha_forward_command_rate: 10.0
 
