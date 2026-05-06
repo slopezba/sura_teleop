@@ -29,6 +29,15 @@ public:
     declare_parameter<std::string>(
       "controller_list_service", "/cirtesub/controller/controller_manager/list_controllers");
     declare_parameter<std::string>("body_force_controller.name", "body_force");
+    declare_parameter<std::string>(
+      "body_force_controller.command_topic",
+      "/cirtesub/controller/body_force/command");
+    declare_parameter<double>("body_force_controller.feedforward_gain_x", 20.0);
+    declare_parameter<double>("body_force_controller.feedforward_gain_y", 20.0);
+    declare_parameter<double>("body_force_controller.feedforward_gain_z", 90.0);
+    declare_parameter<double>("body_force_controller.feedforward_gain_roll", 20.0);
+    declare_parameter<double>("body_force_controller.feedforward_gain_pitch", 20.0);
+    declare_parameter<double>("body_force_controller.feedforward_gain_yaw", 1.0);
     declare_parameter<std::string>("body_velocity_controller.name", "body_velocity");
     declare_parameter<std::string>(
       "body_velocity_controller.setpoint_topic",
@@ -111,6 +120,19 @@ public:
     controller_switch_service_ = get_parameter("controller_switch_service").as_string();
     controller_list_service_ = get_parameter("controller_list_service").as_string();
     body_force_controller_name_ = get_parameter("body_force_controller.name").as_string();
+    body_force_command_topic_ = get_parameter("body_force_controller.command_topic").as_string();
+    body_force_feedforward_gain_x_ =
+      get_parameter("body_force_controller.feedforward_gain_x").as_double();
+    body_force_feedforward_gain_y_ =
+      get_parameter("body_force_controller.feedforward_gain_y").as_double();
+    body_force_feedforward_gain_z_ =
+      get_parameter("body_force_controller.feedforward_gain_z").as_double();
+    body_force_feedforward_gain_roll_ =
+      get_parameter("body_force_controller.feedforward_gain_roll").as_double();
+    body_force_feedforward_gain_pitch_ =
+      get_parameter("body_force_controller.feedforward_gain_pitch").as_double();
+    body_force_feedforward_gain_yaw_ =
+      get_parameter("body_force_controller.feedforward_gain_yaw").as_double();
     body_velocity_controller_name_ = get_parameter("body_velocity_controller.name").as_string();
     body_velocity_setpoint_topic_ =
       get_parameter("body_velocity_controller.setpoint_topic").as_string();
@@ -410,8 +432,11 @@ private:
       return;
     }
 
-    if (!body_velocity_enabled_ && !position_hold_enabled_ && !stabilize_enabled_ &&
-      !depth_hold_enabled_)
+    const bool direct_body_force_enabled = body_force_enabled_ && !body_velocity_enabled_ &&
+      !position_hold_enabled_ && !stabilize_enabled_ && !depth_hold_enabled_;
+
+    if (!direct_body_force_enabled && !body_velocity_enabled_ && !position_hold_enabled_ &&
+      !stabilize_enabled_ && !depth_hold_enabled_)
     {
       return;
     }
@@ -439,9 +464,24 @@ private:
       }
     }
 
+    if (direct_body_force_enabled && active_command_topic_ != body_force_command_topic_) {
+      updateWrenchPublisher(body_force_command_topic_);
+    }
+
     if (command_output_mode_ == CommandOutputMode::Twist && twist_command_pub_) {
       twist_command_pub_->publish(twist_cmd);
     } else if (command_output_mode_ == CommandOutputMode::Wrench && wrench_command_pub_) {
+      if (direct_body_force_enabled) {
+        wrench_cmd.force.x *= body_force_feedforward_gain_x_;
+        wrench_cmd.force.y *= body_force_feedforward_gain_y_;
+        wrench_cmd.force.z *= body_force_feedforward_gain_z_;
+        wrench_cmd.torque.x *= body_force_feedforward_gain_roll_;
+        wrench_cmd.torque.y *= body_force_feedforward_gain_pitch_;
+        wrench_cmd.torque.z *= body_force_feedforward_gain_yaw_;
+        wrench_command_pub_->publish(wrench_cmd);
+        return;
+      }
+
       double feedforward_gain_x = stabilize_feedforward_gain_x_;
       double feedforward_gain_y = stabilize_feedforward_gain_y_;
       double feedforward_gain_z = stabilize_feedforward_gain_z_;
@@ -1351,6 +1391,7 @@ private:
   std::string alpha_left_forward_velocity_controller_name_;
   std::string alpha_right_forward_velocity_controller_name_;
   std::string active_command_topic_;
+  std::string body_force_command_topic_;
   std::string body_velocity_setpoint_topic_;
   std::string position_hold_feedforward_topic_;
   std::string stabilize_feedforward_topic_;
@@ -1362,6 +1403,12 @@ private:
   std::string depth_hold_enable_roll_pitch_service_name_;
   std::string depth_hold_disable_roll_pitch_service_name_;
   double alpha_forward_command_rate_{10.0};
+  double body_force_feedforward_gain_x_{20.0};
+  double body_force_feedforward_gain_y_{20.0};
+  double body_force_feedforward_gain_z_{90.0};
+  double body_force_feedforward_gain_roll_{20.0};
+  double body_force_feedforward_gain_pitch_{20.0};
+  double body_force_feedforward_gain_yaw_{1.0};
   double stabilize_feedforward_gain_x_{20.0};
   double stabilize_feedforward_gain_y_{20.0};
   double stabilize_feedforward_gain_z_{90.0};

@@ -7,6 +7,13 @@ sura_teleop:
 
     body_force_controller:
       name: body_force
+      command_topic: /cirtesub/controller/body_force/command
+      feedforward_gain_x: 20.0
+      feedforward_gain_y: 20.0
+      feedforward_gain_z: 90.0
+      feedforward_gain_roll: 20.0
+      feedforward_gain_pitch: 20.0
+      feedforward_gain_yaw: 1.0
 
     body_velocity_controller:
       name: body_velocity
