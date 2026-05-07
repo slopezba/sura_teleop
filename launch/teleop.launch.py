@@ -1,12 +1,30 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
+from pathlib import Path
 
 
-def generate_launch_description():
+def namespaced_config(config_file, robot_namespace):
+    text = Path(config_file).read_text(encoding="utf-8")
+    if robot_namespace:
+        text = text.replace("sura_teleop:", f"/{robot_namespace}/sura_teleop:", 1)
+        text = text.replace("/cirtesub/", f"/{robot_namespace}/")
+
+    output_file = f"/tmp/sura_teleop_{robot_namespace or 'root'}_{Path(config_file).name}"
+    Path(output_file).write_text(text, encoding="utf-8")
+    return output_file
+
+
+def launch_setup(context, *args, **kwargs):
+    robot_namespace = LaunchConfiguration("robot_namespace").perform(context).strip("/")
     package_share = get_package_share_directory("sura_teleop")
-    params_file = os.path.join(package_share, "config", "teleop_params.yaml")
+    params_file = namespaced_config(
+        os.path.join(package_share, "config", "teleop_params.yaml"),
+        robot_namespace,
+    )
 
     joy_node = Node(
         package="joy",
@@ -24,11 +42,19 @@ def generate_launch_description():
         package="sura_teleop",
         executable="cirtesub_teleop",
         name="sura_teleop",
+        namespace=robot_namespace,
         output="screen",
         parameters=[params_file],
     )
 
-    return LaunchDescription([
+    return [
         joy_node,
         teleop_node,
+    ]
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument("robot_namespace", default_value="sura"),
+        OpaqueFunction(function=launch_setup),
     ])
