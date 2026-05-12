@@ -8,12 +8,12 @@ sura_teleop:
     body_force_controller:
       name: body_force
       command_topic: /cirtesub/controller/body_force/command
-      feedforward_gain_x: 20.0
-      feedforward_gain_y: 20.0
-      feedforward_gain_z: 90.0
-      feedforward_gain_roll: 20.0
-      feedforward_gain_pitch: 20.0
-      feedforward_gain_yaw: 1.0
+      feedforward_gain_x: 35.0
+      feedforward_gain_y: 35.0
+      feedforward_gain_z: 60.0
+      feedforward_gain_roll: 10.0
+      feedforward_gain_pitch: 10.0
+      feedforward_gain_yaw: 2.0
 
     body_velocity_controller:
       name: body_velocity
@@ -28,24 +28,24 @@ sura_teleop:
       feedforward_topic: /cirtesub/controller/stabilize/feedforward
       enable_roll_pitch_service: /cirtesub/controller/stabilize/enable_roll_pitch
       disable_roll_pitch_service: /cirtesub/controller/stabilize/disable_roll_pitch
-      feedforward_gain_x: 20.0
-      feedforward_gain_y: 20.0
-      feedforward_gain_z: 90.0
-      feedforward_gain_roll: 20.0
-      feedforward_gain_pitch: 20.0
-      feedforward_gain_yaw: 1.0
+      feedforward_gain_x: 35.0
+      feedforward_gain_y: 35.0
+      feedforward_gain_z: 60.0
+      feedforward_gain_roll: 10.0
+      feedforward_gain_pitch: 10.0
+      feedforward_gain_yaw: 2.0
 
     depth_hold_controller:
       name: depth_hold
       feedforward_topic: /cirtesub/controller/depth_hold/feedforward
       enable_roll_pitch_service: /cirtesub/controller/depth_hold/enable_roll_pitch
       disable_roll_pitch_service: /cirtesub/controller/depth_hold/disable_roll_pitch
-      feedforward_gain_x: 20.0
-      feedforward_gain_y: 20.0
-      feedforward_gain_z: 90.0
-      feedforward_gain_roll: 20.0
-      feedforward_gain_pitch: 20.0
-      feedforward_gain_yaw: 1.0
+      feedforward_gain_x: 35.0
+      feedforward_gain_y: 35.0
+      feedforward_gain_z: 60.0
+      feedforward_gain_roll: 10.0
+      feedforward_gain_pitch: 10.0
+      feedforward_gain_yaw: 2.0
 
     buttons:
       a: 0
