@@ -11,18 +11,28 @@ def namespaced_config(config_file, robot_namespace):
     text = Path(config_file).read_text(encoding="utf-8")
     if robot_namespace:
         text = text.replace("sura_teleop:", f"/{robot_namespace}/sura_teleop:", 1)
-        text = text.replace("/cirtesub/", f"/{robot_namespace}/")
+        text = text.replace("/sura/", f"/{robot_namespace}/")
 
     output_file = f"/tmp/sura_teleop_{robot_namespace or 'root'}_{Path(config_file).name}"
     Path(output_file).write_text(text, encoding="utf-8")
     return output_file
 
 
+def config_for_namespace(package_share, robot_namespace):
+    namespace = robot_namespace.lower()
+    config_name = (
+        "teleop_params_bluerov.yaml"
+        if "bluerov" in namespace
+        else "teleop_params_cirtesub.yaml"
+    )
+    return os.path.join(package_share, "config", config_name)
+
+
 def launch_setup(context, *args, **kwargs):
     robot_namespace = LaunchConfiguration("robot_namespace").perform(context).strip("/")
     package_share = get_package_share_directory("sura_teleop")
     params_file = namespaced_config(
-        os.path.join(package_share, "config", "teleop_params.yaml"),
+        config_for_namespace(package_share, robot_namespace),
         robot_namespace,
     )
 
