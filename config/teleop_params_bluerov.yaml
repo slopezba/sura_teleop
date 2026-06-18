@@ -66,6 +66,8 @@ sura_teleop:
       heave: 1
       roll: 3
       pitch: 4
+      lt: 2
+      rt: 5
 
     alpha_left_forward_velocity_controller:
       name: alpha_left_forward_velocity_controller
@@ -74,6 +76,12 @@ sura_teleop:
     alpha_right_forward_velocity_controller:
       name: alpha_right_forward_velocity_controller
       command_topic: /sura/controller/alpha_right_forward_velocity_controller/commands
+
+    alpha_left_joint_trajectory_controller:
+      name: alpha_left_joint_trajectory_controller
+
+    alpha_right_joint_trajectory_controller:
+      name: alpha_right_joint_trajectory_controller
 
     alpha_forward_command_rate: 10.0
 
@@ -84,5 +92,6 @@ sura_teleop:
       yaw: -1.0
       roll: -1.0
       pitch: -1.0
+      alpha_axis_a_velocity: 0.01
 
     deadzone: 0.05

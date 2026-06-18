@@ -94,12 +94,20 @@ public:
     declare_parameter<int>("axes.heave", 4);
     declare_parameter<int>("axes.roll", 3);
     declare_parameter<int>("axes.pitch", 4);
+    declare_parameter<int>("axes.lt", 2);
+    declare_parameter<int>("axes.rt", 5);
     declare_parameter<std::string>(
       "alpha_left_forward_velocity_controller.name",
       "alpha_left_forward_velocity_controller");
     declare_parameter<std::string>(
       "alpha_right_forward_velocity_controller.name",
       "alpha_right_forward_velocity_controller");
+    declare_parameter<std::string>(
+      "alpha_left_joint_trajectory_controller.name",
+      "alpha_left_joint_trajectory_controller");
+    declare_parameter<std::string>(
+      "alpha_right_joint_trajectory_controller.name",
+      "alpha_right_joint_trajectory_controller");
     declare_parameter<std::string>(
       "alpha_left_forward_velocity_controller.command_topic",
       "/cirtesub/controller/alpha_left_forward_velocity_controller/commands");
@@ -113,6 +121,7 @@ public:
     declare_parameter<double>("scales.heave", 1.0);
     declare_parameter<double>("scales.roll", 1.0);
     declare_parameter<double>("scales.pitch", 1.0);
+    declare_parameter<double>("scales.alpha_axis_a_velocity", 0.01);
     declare_parameter<double>("deadzone", 0.05);
 
     rate_ = get_parameter("rate").as_double();
@@ -193,10 +202,16 @@ public:
     heave_axis_ = get_parameter("axes.heave").as_int();
     roll_axis_ = get_parameter("axes.roll").as_int();
     pitch_axis_ = get_parameter("axes.pitch").as_int();
+    lt_axis_ = get_parameter("axes.lt").as_int();
+    rt_axis_ = get_parameter("axes.rt").as_int();
     alpha_left_forward_velocity_controller_name_ =
       get_parameter("alpha_left_forward_velocity_controller.name").as_string();
     alpha_right_forward_velocity_controller_name_ =
       get_parameter("alpha_right_forward_velocity_controller.name").as_string();
+    alpha_left_joint_trajectory_controller_name_ =
+      get_parameter("alpha_left_joint_trajectory_controller.name").as_string();
+    alpha_right_joint_trajectory_controller_name_ =
+      get_parameter("alpha_right_joint_trajectory_controller.name").as_string();
     alpha_left_forward_velocity_command_topic_ =
       get_parameter("alpha_left_forward_velocity_controller.command_topic").as_string();
     alpha_right_forward_velocity_command_topic_ =
@@ -208,6 +223,7 @@ public:
     heave_scale_ = get_parameter("scales.heave").as_double();
     roll_scale_ = get_parameter("scales.roll").as_double();
     pitch_scale_ = get_parameter("scales.pitch").as_double();
+    alpha_axis_a_velocity_scale_ = get_parameter("scales.alpha_axis_a_velocity").as_double();
     deadzone_ = std::max(0.0, get_parameter("deadzone").as_double());
 
     if (rate_ <= 0.0) {
@@ -524,6 +540,9 @@ private:
     double axis_c_command = readAxis(last_joy_msg_->axes, heave_axis_);
     double axis_d_command = readAxis(last_joy_msg_->axes, sway_axis_);
     double axis_e_command = readAxis(last_joy_msg_->axes, surge_axis_);
+    const double lt_command = readTriggerAxis(last_joy_msg_->axes, lt_axis_);
+    const double rt_command = readTriggerAxis(last_joy_msg_->axes, rt_axis_);
+    const double axis_a_command = (rt_command - lt_command) * alpha_axis_a_velocity_scale_;
 
     if (alpha_forward_controller_selection_ == AlphaForwardControllerSelection::Left) {
       axis_d_command = -axis_d_command;
@@ -533,7 +552,7 @@ private:
 
     Float64MultiArrayMsg command_msg;
     command_msg.data = {
-      0.0,
+      axis_a_command,
       axis_b_command,
       axis_c_command,
       axis_d_command,
@@ -1166,12 +1185,18 @@ private:
           if (!is_active(alpha_left_forward_velocity_controller_name_)) {
             activate_controllers.push_back(alpha_left_forward_velocity_controller_name_);
           }
+          if (is_active(alpha_left_joint_trajectory_controller_name_)) {
+            deactivate_controllers.push_back(alpha_left_joint_trajectory_controller_name_);
+          }
           if (is_active(alpha_right_forward_velocity_controller_name_)) {
             deactivate_controllers.push_back(alpha_right_forward_velocity_controller_name_);
           }
         } else if (selection == AlphaForwardControllerSelection::Right) {
           if (!is_active(alpha_right_forward_velocity_controller_name_)) {
             activate_controllers.push_back(alpha_right_forward_velocity_controller_name_);
+          }
+          if (is_active(alpha_right_joint_trajectory_controller_name_)) {
+            deactivate_controllers.push_back(alpha_right_joint_trajectory_controller_name_);
           }
           if (is_active(alpha_left_forward_velocity_controller_name_)) {
             deactivate_controllers.push_back(alpha_left_forward_velocity_controller_name_);
@@ -1328,6 +1353,16 @@ private:
     return std::fabs(value) < deadzone_ ? 0.0 : value;
   }
 
+  double readTriggerAxis(const std::vector<float> & axes, int index) const
+  {
+    if (!isValidAxisIndex(axes, index)) {
+      return 0.0;
+    }
+
+    const double value = static_cast<double>(axes[static_cast<size_t>(index)]);
+    return std::clamp((1.0 - value) * 0.5, 0.0, 1.0);
+  }
+
   bool isValidAxisIndex(const std::vector<float> & axes, int index) const
   {
     return index >= 0 && static_cast<size_t>(index) < axes.size();
@@ -1363,6 +1398,8 @@ private:
   int heave_axis_{1};
   int roll_axis_{3};
   int pitch_axis_{4};
+  int lt_axis_{2};
+  int rt_axis_{5};
 
   bool body_force_enabled_{false};
   bool body_velocity_enabled_{false};
@@ -1390,6 +1427,8 @@ private:
   std::string depth_hold_controller_name_;
   std::string alpha_left_forward_velocity_controller_name_;
   std::string alpha_right_forward_velocity_controller_name_;
+  std::string alpha_left_joint_trajectory_controller_name_;
+  std::string alpha_right_joint_trajectory_controller_name_;
   std::string active_command_topic_;
   std::string body_force_command_topic_;
   std::string body_velocity_setpoint_topic_;
@@ -1421,6 +1460,7 @@ private:
   double depth_hold_feedforward_gain_roll_{20.0};
   double depth_hold_feedforward_gain_pitch_{20.0};
   double depth_hold_feedforward_gain_yaw_{1.0};
+  double alpha_axis_a_velocity_scale_{0.01};
 
   JoyMsg::SharedPtr last_joy_msg_;
   TeleopMode teleop_mode_{TeleopMode::Auv};
