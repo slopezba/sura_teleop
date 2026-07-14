@@ -18,21 +18,26 @@ def namespaced_config(config_file, robot_namespace):
     return output_file
 
 
-def config_for_namespace(package_share, robot_namespace):
+def config_for_namespace(package_share, robot_namespace, teleop_profile):
     namespace = robot_namespace.lower()
-    config_name = (
-        "teleop_params_bluerov.yaml"
-        if "bluerov" in namespace
-        else "teleop_params_cirtesub.yaml"
-    )
+    if "bluerov" in namespace:
+        config_name = "teleop_params_bluerov.yaml"
+    else:
+        profile = teleop_profile.lower() or "sim"
+        if profile not in ("sim", "real"):
+            raise RuntimeError(
+                f"Launch argument 'teleop' must be 'sim' or 'real', got '{teleop_profile}'."
+            )
+        config_name = f"teleop_params_cirtesub_{profile}.yaml"
     return os.path.join(package_share, "config", config_name)
 
 
 def launch_setup(context, *args, **kwargs):
     robot_namespace = LaunchConfiguration("robot_namespace").perform(context).strip("/")
+    teleop_profile = LaunchConfiguration("teleop").perform(context).strip()
     package_share = get_package_share_directory("sura_teleop")
     params_file = namespaced_config(
-        config_for_namespace(package_share, robot_namespace),
+        config_for_namespace(package_share, robot_namespace, teleop_profile),
         robot_namespace,
     )
 
@@ -66,5 +71,6 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("robot_namespace", default_value="sura"),
+        DeclareLaunchArgument("teleop", default_value="sim"),
         OpaqueFunction(function=launch_setup),
     ])

@@ -1,0 +1,131 @@
+sura_teleop:
+  ros__parameters:
+    rate: 20.0
+    joy_topic: /joy
+    controller_switch_service: /sura/controller/controller_manager/switch_controller
+    controller_list_service: /sura/controller/controller_manager/list_controllers
+
+    body_force_controller:
+      name: body_force
+      command_topic: /sura/controller/body_force/command
+      feedforward_gain_x: 70.0
+      feedforward_gain_y: 70.0
+      feedforward_gain_z: 120.0
+      feedforward_gain_roll: 20.0
+      feedforward_gain_pitch: 20.0
+      feedforward_gain_yaw: 10.0
+
+    body_velocity_controller:
+      name: body_velocity
+      setpoint_topic: /sura/controller/body_velocity/setpoint
+
+    position_hold_controller:
+      name: position_hold
+      feedforward_topic: /sura/controller/position_hold/feedforward
+
+    stabilize_controller:
+      name: stabilize
+      feedforward_topic: /sura/controller/stabilize/feedforward
+      enable_roll_pitch_service: /sura/controller/stabilize/enable_roll_pitch
+      disable_roll_pitch_service: /sura/controller/stabilize/disable_roll_pitch
+      feedforward_gain_x: 70.0
+      feedforward_gain_y: 70.0
+      feedforward_gain_z: 120.0
+      feedforward_gain_roll: 20.0
+      feedforward_gain_pitch: 20.0
+      feedforward_gain_yaw: 10.0
+
+    depth_hold_controller:
+      name: depth_hold
+      feedforward_topic: /sura/controller/depth_hold/feedforward
+      enable_roll_pitch_service: /sura/controller/depth_hold/enable_roll_pitch
+      disable_roll_pitch_service: /sura/controller/depth_hold/disable_roll_pitch
+      feedforward_gain_x: 70.0
+      feedforward_gain_y: 70.0
+      feedforward_gain_z: 120.0
+      feedforward_gain_roll: 20.0
+      feedforward_gain_pitch: 20.0
+      feedforward_gain_yaw: 10.0
+
+    buttons:
+      a: 0
+      b: 1
+      x: 2
+      lb: 4
+      rb: 5
+      y: 3
+      left_stick: 9
+      right_stick: 10
+
+    axes:
+      hat_horizontal: 6
+      hat_vertical: 7
+      surge: 4
+      sway: 3
+      yaw: 0
+      heave: 1
+      roll: 3
+      pitch: 4
+      lt: 2
+      rt: 5
+      alpha_axis_b: 0
+      alpha_axis_c: 1
+      alpha_axis_d: 4
+      alpha_axis_e: 3
+
+    alpha_left_forward_velocity_controller:
+      name: alpha_left_forward_velocity_controller
+      command_topic: /sura/controller/alpha_left_forward_velocity_controller/commands
+
+    alpha_right_forward_velocity_controller:
+      name: alpha_right_forward_velocity_controller
+      command_topic: /sura/controller/alpha_right_forward_velocity_controller/commands
+
+    alpha_left_joint_trajectory_controller:
+      name: alpha_left_joint_trajectory_controller
+
+    alpha_right_joint_trajectory_controller:
+      name: alpha_right_joint_trajectory_controller
+
+    alpha_left_cartesian_velocity_controller:
+      name: alpha_left_cartesian_velocity_controller
+      command_topic: /sura/controller/alpha_left_cartesian_velocity_controller/twist
+      frame_id: cirtesub/alpha_left/base_link
+
+    alpha_right_cartesian_velocity_controller:
+      name: alpha_right_cartesian_velocity_controller
+      command_topic: /sura/controller/alpha_right_cartesian_velocity_controller/twist
+      frame_id: cirtesub/alpha_right/base_link
+
+    alpha_forward_command_rate: 10.0
+    alpha_cartesian_command_rate: 10.0
+
+    scales:
+      surge: 1.0
+      sway: -1.0
+      heave: 1.0
+      yaw: -1.0
+      roll: -1.0
+      pitch: -1.0
+      alpha_left_axis_a_velocity: 0.01
+      alpha_left_axis_b_velocity: -1.0
+      alpha_left_axis_c_velocity: 1.0
+      alpha_left_axis_d_velocity: -1.0
+      alpha_left_axis_e_velocity: -1.0
+      alpha_right_axis_a_velocity: 0.01
+      alpha_right_axis_b_velocity: -1.0
+      alpha_right_axis_c_velocity: 1.0
+      alpha_right_axis_d_velocity: -1.0
+      alpha_right_axis_e_velocity: -1.0
+      alpha_left_cartesian_linear_x: 0.3
+      alpha_left_cartesian_linear_y: -0.3
+      alpha_left_cartesian_linear_z: -0.3
+      alpha_left_cartesian_angular_y: 0.015
+      alpha_left_cartesian_angular_z: -0.5
+      alpha_right_cartesian_linear_x: 0.3
+      alpha_right_cartesian_linear_y: -0.3
+      alpha_right_cartesian_linear_z: -0.3
+      alpha_right_cartesian_angular_y: 0.015
+      alpha_right_cartesian_angular_z: -0.3
+
+    deadzone: 0.05

@@ -10,6 +10,7 @@
 #include "controller_manager_msgs/srv/list_controllers.hpp"
 #include "controller_manager_msgs/srv/switch_controller.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "geometry_msgs/msg/wrench.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joy.hpp"
@@ -96,6 +97,10 @@ public:
     declare_parameter<int>("axes.pitch", 4);
     declare_parameter<int>("axes.lt", 2);
     declare_parameter<int>("axes.rt", 5);
+    declare_parameter<int>("axes.alpha_axis_b", 3);
+    declare_parameter<int>("axes.alpha_axis_c", 4);
+    declare_parameter<int>("axes.alpha_axis_d", 0);
+    declare_parameter<int>("axes.alpha_axis_e", 1);
     declare_parameter<std::string>(
       "alpha_left_forward_velocity_controller.name",
       "alpha_left_forward_velocity_controller");
@@ -109,19 +114,57 @@ public:
       "alpha_right_joint_trajectory_controller.name",
       "alpha_right_joint_trajectory_controller");
     declare_parameter<std::string>(
+      "alpha_left_cartesian_velocity_controller.name",
+      "alpha_left_cartesian_velocity_controller");
+    declare_parameter<std::string>(
+      "alpha_right_cartesian_velocity_controller.name",
+      "alpha_right_cartesian_velocity_controller");
+    declare_parameter<std::string>(
       "alpha_left_forward_velocity_controller.command_topic",
       "/cirtesub/controller/alpha_left_forward_velocity_controller/commands");
     declare_parameter<std::string>(
       "alpha_right_forward_velocity_controller.command_topic",
       "/cirtesub/controller/alpha_right_forward_velocity_controller/commands");
+    declare_parameter<std::string>(
+      "alpha_left_cartesian_velocity_controller.command_topic",
+      "/cirtesub/controller/alpha_left_cartesian_velocity_controller/twist");
+    declare_parameter<std::string>(
+      "alpha_right_cartesian_velocity_controller.command_topic",
+      "/cirtesub/controller/alpha_right_cartesian_velocity_controller/twist");
+    declare_parameter<std::string>(
+      "alpha_left_cartesian_velocity_controller.frame_id",
+      "cirtesub/alpha_left/base_link");
+    declare_parameter<std::string>(
+      "alpha_right_cartesian_velocity_controller.frame_id",
+      "cirtesub/alpha_right/base_link");
     declare_parameter<double>("alpha_forward_command_rate", 10.0);
+    declare_parameter<double>("alpha_cartesian_command_rate", 10.0);
     declare_parameter<double>("scales.surge", 1.0);
     declare_parameter<double>("scales.sway", 1.0);
     declare_parameter<double>("scales.yaw", 1.0);
     declare_parameter<double>("scales.heave", 1.0);
     declare_parameter<double>("scales.roll", 1.0);
     declare_parameter<double>("scales.pitch", 1.0);
-    declare_parameter<double>("scales.alpha_axis_a_velocity", 0.01);
+    declare_parameter<double>("scales.alpha_left_axis_a_velocity", 0.01);
+    declare_parameter<double>("scales.alpha_left_axis_b_velocity", 1.0);
+    declare_parameter<double>("scales.alpha_left_axis_c_velocity", 1.0);
+    declare_parameter<double>("scales.alpha_left_axis_d_velocity", -1.0);
+    declare_parameter<double>("scales.alpha_left_axis_e_velocity", 1.0);
+    declare_parameter<double>("scales.alpha_right_axis_a_velocity", 0.01);
+    declare_parameter<double>("scales.alpha_right_axis_b_velocity", 1.0);
+    declare_parameter<double>("scales.alpha_right_axis_c_velocity", 1.0);
+    declare_parameter<double>("scales.alpha_right_axis_d_velocity", 1.0);
+    declare_parameter<double>("scales.alpha_right_axis_e_velocity", -1.0);
+    declare_parameter<double>("scales.alpha_left_cartesian_linear_x", 1.0);
+    declare_parameter<double>("scales.alpha_left_cartesian_linear_y", 1.0);
+    declare_parameter<double>("scales.alpha_left_cartesian_linear_z", 1.0);
+    declare_parameter<double>("scales.alpha_left_cartesian_angular_y", 0.01);
+    declare_parameter<double>("scales.alpha_left_cartesian_angular_z", 1.0);
+    declare_parameter<double>("scales.alpha_right_cartesian_linear_x", 1.0);
+    declare_parameter<double>("scales.alpha_right_cartesian_linear_y", 1.0);
+    declare_parameter<double>("scales.alpha_right_cartesian_linear_z", 1.0);
+    declare_parameter<double>("scales.alpha_right_cartesian_angular_y", 0.01);
+    declare_parameter<double>("scales.alpha_right_cartesian_angular_z", 1.0);
     declare_parameter<double>("deadzone", 0.05);
 
     rate_ = get_parameter("rate").as_double();
@@ -204,6 +247,10 @@ public:
     pitch_axis_ = get_parameter("axes.pitch").as_int();
     lt_axis_ = get_parameter("axes.lt").as_int();
     rt_axis_ = get_parameter("axes.rt").as_int();
+    alpha_axis_b_axis_ = get_parameter("axes.alpha_axis_b").as_int();
+    alpha_axis_c_axis_ = get_parameter("axes.alpha_axis_c").as_int();
+    alpha_axis_d_axis_ = get_parameter("axes.alpha_axis_d").as_int();
+    alpha_axis_e_axis_ = get_parameter("axes.alpha_axis_e").as_int();
     alpha_left_forward_velocity_controller_name_ =
       get_parameter("alpha_left_forward_velocity_controller.name").as_string();
     alpha_right_forward_velocity_controller_name_ =
@@ -212,18 +259,70 @@ public:
       get_parameter("alpha_left_joint_trajectory_controller.name").as_string();
     alpha_right_joint_trajectory_controller_name_ =
       get_parameter("alpha_right_joint_trajectory_controller.name").as_string();
+    alpha_left_cartesian_velocity_controller_name_ =
+      get_parameter("alpha_left_cartesian_velocity_controller.name").as_string();
+    alpha_right_cartesian_velocity_controller_name_ =
+      get_parameter("alpha_right_cartesian_velocity_controller.name").as_string();
     alpha_left_forward_velocity_command_topic_ =
       get_parameter("alpha_left_forward_velocity_controller.command_topic").as_string();
     alpha_right_forward_velocity_command_topic_ =
       get_parameter("alpha_right_forward_velocity_controller.command_topic").as_string();
+    alpha_left_cartesian_velocity_command_topic_ =
+      get_parameter("alpha_left_cartesian_velocity_controller.command_topic").as_string();
+    alpha_right_cartesian_velocity_command_topic_ =
+      get_parameter("alpha_right_cartesian_velocity_controller.command_topic").as_string();
+    alpha_left_cartesian_frame_id_ =
+      get_parameter("alpha_left_cartesian_velocity_controller.frame_id").as_string();
+    alpha_right_cartesian_frame_id_ =
+      get_parameter("alpha_right_cartesian_velocity_controller.frame_id").as_string();
     alpha_forward_command_rate_ = get_parameter("alpha_forward_command_rate").as_double();
+    alpha_cartesian_command_rate_ = get_parameter("alpha_cartesian_command_rate").as_double();
     surge_scale_ = get_parameter("scales.surge").as_double();
     sway_scale_ = get_parameter("scales.sway").as_double();
     yaw_scale_ = get_parameter("scales.yaw").as_double();
     heave_scale_ = get_parameter("scales.heave").as_double();
     roll_scale_ = get_parameter("scales.roll").as_double();
     pitch_scale_ = get_parameter("scales.pitch").as_double();
-    alpha_axis_a_velocity_scale_ = get_parameter("scales.alpha_axis_a_velocity").as_double();
+    alpha_left_axis_a_velocity_scale_ =
+      get_parameter("scales.alpha_left_axis_a_velocity").as_double();
+    alpha_left_axis_b_velocity_scale_ =
+      get_parameter("scales.alpha_left_axis_b_velocity").as_double();
+    alpha_left_axis_c_velocity_scale_ =
+      get_parameter("scales.alpha_left_axis_c_velocity").as_double();
+    alpha_left_axis_d_velocity_scale_ =
+      get_parameter("scales.alpha_left_axis_d_velocity").as_double();
+    alpha_left_axis_e_velocity_scale_ =
+      get_parameter("scales.alpha_left_axis_e_velocity").as_double();
+    alpha_right_axis_a_velocity_scale_ =
+      get_parameter("scales.alpha_right_axis_a_velocity").as_double();
+    alpha_right_axis_b_velocity_scale_ =
+      get_parameter("scales.alpha_right_axis_b_velocity").as_double();
+    alpha_right_axis_c_velocity_scale_ =
+      get_parameter("scales.alpha_right_axis_c_velocity").as_double();
+    alpha_right_axis_d_velocity_scale_ =
+      get_parameter("scales.alpha_right_axis_d_velocity").as_double();
+    alpha_right_axis_e_velocity_scale_ =
+      get_parameter("scales.alpha_right_axis_e_velocity").as_double();
+    alpha_left_cartesian_linear_x_scale_ =
+      get_parameter("scales.alpha_left_cartesian_linear_x").as_double();
+    alpha_left_cartesian_linear_y_scale_ =
+      get_parameter("scales.alpha_left_cartesian_linear_y").as_double();
+    alpha_left_cartesian_linear_z_scale_ =
+      get_parameter("scales.alpha_left_cartesian_linear_z").as_double();
+    alpha_left_cartesian_angular_y_scale_ =
+      get_parameter("scales.alpha_left_cartesian_angular_y").as_double();
+    alpha_left_cartesian_angular_z_scale_ =
+      get_parameter("scales.alpha_left_cartesian_angular_z").as_double();
+    alpha_right_cartesian_linear_x_scale_ =
+      get_parameter("scales.alpha_right_cartesian_linear_x").as_double();
+    alpha_right_cartesian_linear_y_scale_ =
+      get_parameter("scales.alpha_right_cartesian_linear_y").as_double();
+    alpha_right_cartesian_linear_z_scale_ =
+      get_parameter("scales.alpha_right_cartesian_linear_z").as_double();
+    alpha_right_cartesian_angular_y_scale_ =
+      get_parameter("scales.alpha_right_cartesian_angular_y").as_double();
+    alpha_right_cartesian_angular_z_scale_ =
+      get_parameter("scales.alpha_right_cartesian_angular_z").as_double();
     deadzone_ = std::max(0.0, get_parameter("deadzone").as_double());
 
     if (rate_ <= 0.0) {
@@ -256,6 +355,12 @@ public:
     alpha_right_forward_velocity_command_pub_ = create_publisher<Float64MultiArrayMsg>(
       alpha_right_forward_velocity_command_topic_,
       rclcpp::SystemDefaultsQoS());
+    alpha_left_cartesian_velocity_command_pub_ = create_publisher<TwistStampedMsg>(
+      alpha_left_cartesian_velocity_command_topic_,
+      rclcpp::SystemDefaultsQoS());
+    alpha_right_cartesian_velocity_command_pub_ = create_publisher<TwistStampedMsg>(
+      alpha_right_cartesian_velocity_command_topic_,
+      rclcpp::SystemDefaultsQoS());
 
     timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / rate_),
@@ -273,32 +378,50 @@ public:
       std::chrono::duration<double>(1.0 / alpha_forward_command_rate_),
       std::bind(&CirtesubTeleop::alphaForwardTimerCallback, this));
 
+    if (alpha_cartesian_command_rate_ <= 0.0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Invalid Alpha cartesian command rate %.3f Hz, using 10.0 Hz.",
+        alpha_cartesian_command_rate_);
+      alpha_cartesian_command_rate_ = 10.0;
+    }
+
+    alpha_cartesian_timer_ = create_wall_timer(
+      std::chrono::duration<double>(1.0 / alpha_cartesian_command_rate_),
+      std::bind(&CirtesubTeleop::alphaCartesianTimerCallback, this));
+
     RCLCPP_INFO(
       get_logger(),
-      "Teleop ready. R3 selects AUV mode, L3 selects arm mode, RB+X toggles '%s', RB+B toggles '%s', RB+Y toggles '%s', RB+A toggles '%s', RB+LB toggles '%s', RB+hat left selects '%s', RB+hat right selects '%s', active command topic='%s'.",
+      "Teleop ready. R3 selects AUV mode, L3 selects arm mode, AUV RB+X toggles '%s', AUV RB+B toggles '%s', AUV RB+Y toggles '%s', AUV RB+A toggles '%s', AUV RB+LB toggles '%s'. In arm mode RB+X selects cartesian, RB+A selects trajectory, RB+B selects joint, RB+hat left/right activates the selected mode for left/right Alpha. Active command topic='%s'.",
       body_velocity_controller_name_.c_str(),
       position_hold_controller_name_.c_str(),
       stabilize_controller_name_.c_str(),
       depth_hold_controller_name_.c_str(),
       body_force_controller_name_.c_str(),
-      alpha_left_forward_velocity_controller_name_.c_str(),
-      alpha_right_forward_velocity_controller_name_.c_str(),
       active_command_topic_.c_str());
   }
 
 private:
   using JoyMsg = sensor_msgs::msg::Joy;
   using TwistMsg = geometry_msgs::msg::Twist;
+  using TwistStampedMsg = geometry_msgs::msg::TwistStamped;
   using WrenchMsg = geometry_msgs::msg::Wrench;
   using Float64MultiArrayMsg = std_msgs::msg::Float64MultiArray;
   using ListControllersSrv = controller_manager_msgs::srv::ListControllers;
   using SwitchControllerSrv = controller_manager_msgs::srv::SwitchController;
 
-  enum class AlphaForwardControllerSelection
+  enum class AlphaArmSelection
   {
     None,
     Left,
     Right
+  };
+
+  enum class AlphaControllerMode
+  {
+    Cartesian,
+    Trajectory,
+    Joint
   };
 
   enum class TeleopMode
@@ -422,7 +545,16 @@ private:
     }
 
     if (teleop_mode_ == TeleopMode::Arm) {
-      processAlphaForwardControllerSelection(*msg, rb_pressed);
+      if (body_velocity_combo_pressed && !last_body_velocity_combo_state_) {
+        setAlphaControllerMode(AlphaControllerMode::Cartesian);
+      }
+      if (depth_hold_combo_pressed && !last_depth_hold_combo_state_) {
+        setAlphaControllerMode(AlphaControllerMode::Trajectory);
+      }
+      if (position_hold_combo_pressed && !last_position_hold_combo_state_) {
+        setAlphaControllerMode(AlphaControllerMode::Joint);
+      }
+      processAlphaControllerSelection(*msg, rb_pressed);
     } else {
       last_hat_horizontal_state_ = 0;
     }
@@ -530,24 +662,32 @@ private:
       return;
     }
 
-    if (alpha_forward_controller_selection_ == AlphaForwardControllerSelection::None ||
-      last_joy_msg_ == nullptr)
+    if (alpha_controller_mode_ != AlphaControllerMode::Joint ||
+      alpha_arm_selection_ == AlphaArmSelection::None || last_joy_msg_ == nullptr)
     {
       return;
     }
 
-    double axis_b_command = readAxis(last_joy_msg_->axes, yaw_axis_);
-    double axis_c_command = readAxis(last_joy_msg_->axes, heave_axis_);
-    double axis_d_command = readAxis(last_joy_msg_->axes, sway_axis_);
-    double axis_e_command = readAxis(last_joy_msg_->axes, surge_axis_);
+    double axis_b_command = readAxis(last_joy_msg_->axes, alpha_axis_b_axis_);
+    double axis_c_command = readAxis(last_joy_msg_->axes, alpha_axis_c_axis_);
+    double axis_d_command = readAxis(last_joy_msg_->axes, alpha_axis_d_axis_);
+    double axis_e_command = readAxis(last_joy_msg_->axes, alpha_axis_e_axis_);
     const double lt_command = readTriggerAxis(last_joy_msg_->axes, lt_axis_);
     const double rt_command = readTriggerAxis(last_joy_msg_->axes, rt_axis_);
-    const double axis_a_command = (rt_command - lt_command) * alpha_axis_a_velocity_scale_;
+    double axis_a_command = (rt_command - lt_command);
 
-    if (alpha_forward_controller_selection_ == AlphaForwardControllerSelection::Left) {
-      axis_d_command = -axis_d_command;
-    } else if (alpha_forward_controller_selection_ == AlphaForwardControllerSelection::Right) {
-      axis_e_command = -axis_e_command;
+    if (alpha_arm_selection_ == AlphaArmSelection::Left) {
+      axis_a_command *= alpha_left_axis_a_velocity_scale_;
+      axis_b_command *= alpha_left_axis_b_velocity_scale_;
+      axis_c_command *= alpha_left_axis_c_velocity_scale_;
+      axis_d_command *= alpha_left_axis_d_velocity_scale_;
+      axis_e_command *= alpha_left_axis_e_velocity_scale_;
+    } else if (alpha_arm_selection_ == AlphaArmSelection::Right) {
+      axis_a_command *= alpha_right_axis_a_velocity_scale_;
+      axis_b_command *= alpha_right_axis_b_velocity_scale_;
+      axis_c_command *= alpha_right_axis_c_velocity_scale_;
+      axis_d_command *= alpha_right_axis_d_velocity_scale_;
+      axis_e_command *= alpha_right_axis_e_velocity_scale_;
     }
 
     Float64MultiArrayMsg command_msg;
@@ -558,10 +698,49 @@ private:
       axis_d_command,
       axis_e_command};
 
-    if (alpha_forward_controller_selection_ == AlphaForwardControllerSelection::Left) {
+    if (alpha_arm_selection_ == AlphaArmSelection::Left) {
       alpha_left_forward_velocity_command_pub_->publish(command_msg);
-    } else if (alpha_forward_controller_selection_ == AlphaForwardControllerSelection::Right) {
+    } else if (alpha_arm_selection_ == AlphaArmSelection::Right) {
       alpha_right_forward_velocity_command_pub_->publish(command_msg);
+    }
+  }
+
+  void alphaCartesianTimerCallback()
+  {
+    if (teleop_mode_ != TeleopMode::Arm ||
+      alpha_controller_mode_ != AlphaControllerMode::Cartesian ||
+      alpha_arm_selection_ == AlphaArmSelection::None || last_joy_msg_ == nullptr)
+    {
+      return;
+    }
+
+    double linear_x = readAxis(last_joy_msg_->axes, alpha_axis_d_axis_);
+    double linear_y = readAxis(last_joy_msg_->axes, alpha_axis_e_axis_);
+    double linear_z = readAxis(last_joy_msg_->axes, alpha_axis_c_axis_);
+    double angular_z = readAxis(last_joy_msg_->axes, alpha_axis_b_axis_);
+    const double lt_command = readTriggerAxis(last_joy_msg_->axes, lt_axis_);
+    const double rt_command = readTriggerAxis(last_joy_msg_->axes, rt_axis_);
+    double angular_y = rt_command - lt_command;
+
+    TwistStampedMsg command_msg;
+    command_msg.header.stamp = now();
+
+    if (alpha_arm_selection_ == AlphaArmSelection::Left) {
+      command_msg.header.frame_id = alpha_left_cartesian_frame_id_;
+      command_msg.twist.linear.x = linear_x * alpha_left_cartesian_linear_x_scale_;
+      command_msg.twist.linear.y = linear_y * alpha_left_cartesian_linear_y_scale_;
+      command_msg.twist.linear.z = linear_z * alpha_left_cartesian_linear_z_scale_;
+      command_msg.twist.angular.y = angular_y * alpha_left_cartesian_angular_y_scale_;
+      command_msg.twist.angular.z = angular_z * alpha_left_cartesian_angular_z_scale_;
+      alpha_left_cartesian_velocity_command_pub_->publish(command_msg);
+    } else if (alpha_arm_selection_ == AlphaArmSelection::Right) {
+      command_msg.header.frame_id = alpha_right_cartesian_frame_id_;
+      command_msg.twist.linear.x = linear_x * alpha_right_cartesian_linear_x_scale_;
+      command_msg.twist.linear.y = linear_y * alpha_right_cartesian_linear_y_scale_;
+      command_msg.twist.linear.z = linear_z * alpha_right_cartesian_linear_z_scale_;
+      command_msg.twist.angular.y = angular_y * alpha_right_cartesian_angular_y_scale_;
+      command_msg.twist.angular.z = angular_z * alpha_right_cartesian_angular_z_scale_;
+      alpha_right_cartesian_velocity_command_pub_->publish(command_msg);
     }
   }
 
@@ -1113,7 +1292,7 @@ private:
     (void)future;
   }
 
-  void processAlphaForwardControllerSelection(const JoyMsg & msg, bool rb_pressed)
+  void processAlphaControllerSelection(const JoyMsg & msg, bool rb_pressed)
   {
     if (!rb_pressed) {
       last_hat_horizontal_state_ = 0;
@@ -1130,25 +1309,21 @@ private:
 
     if (current_hat_horizontal_state != last_hat_horizontal_state_) {
       if (current_hat_horizontal_state > 0) {
-        requestAlphaForwardControllerSelection(AlphaForwardControllerSelection::Left);
+        requestAlphaControllerSelection(AlphaArmSelection::Left);
       } else if (current_hat_horizontal_state < 0) {
-        requestAlphaForwardControllerSelection(AlphaForwardControllerSelection::Right);
+        requestAlphaControllerSelection(AlphaArmSelection::Right);
       }
     }
 
     last_hat_horizontal_state_ = current_hat_horizontal_state;
   }
 
-  void requestAlphaForwardControllerSelection(AlphaForwardControllerSelection selection)
+  void requestAlphaControllerSelection(AlphaArmSelection selection)
   {
     if (switch_in_progress_) {
       RCLCPP_WARN(
         get_logger(),
         "Ignoring Alpha controller request because a switch is already in progress.");
-      return;
-    }
-
-    if (selection == alpha_forward_controller_selection_) {
       return;
     }
 
@@ -1181,41 +1356,28 @@ private:
         std::vector<std::string> activate_controllers;
         std::vector<std::string> deactivate_controllers;
 
-        if (selection == AlphaForwardControllerSelection::Left) {
-          if (!is_active(alpha_left_forward_velocity_controller_name_)) {
-            activate_controllers.push_back(alpha_left_forward_velocity_controller_name_);
+        const std::string target_controller =
+          getAlphaControllerName(alpha_controller_mode_, selection);
+        for (const auto & controller_name : getAllAlphaControllerNames()) {
+          if (controller_name.empty()) {
+            continue;
           }
-          if (is_active(alpha_left_joint_trajectory_controller_name_)) {
-            deactivate_controllers.push_back(alpha_left_joint_trajectory_controller_name_);
-          }
-          if (is_active(alpha_right_forward_velocity_controller_name_)) {
-            deactivate_controllers.push_back(alpha_right_forward_velocity_controller_name_);
-          }
-        } else if (selection == AlphaForwardControllerSelection::Right) {
-          if (!is_active(alpha_right_forward_velocity_controller_name_)) {
-            activate_controllers.push_back(alpha_right_forward_velocity_controller_name_);
-          }
-          if (is_active(alpha_right_joint_trajectory_controller_name_)) {
-            deactivate_controllers.push_back(alpha_right_joint_trajectory_controller_name_);
-          }
-          if (is_active(alpha_left_forward_velocity_controller_name_)) {
-            deactivate_controllers.push_back(alpha_left_forward_velocity_controller_name_);
-          }
-        } else {
-          if (is_active(alpha_left_forward_velocity_controller_name_)) {
-            deactivate_controllers.push_back(alpha_left_forward_velocity_controller_name_);
-          }
-          if (is_active(alpha_right_forward_velocity_controller_name_)) {
-            deactivate_controllers.push_back(alpha_right_forward_velocity_controller_name_);
+          if (controller_name == target_controller) {
+            if (!is_active(controller_name)) {
+              activate_controllers.push_back(controller_name);
+            }
+          } else if (is_active(controller_name)) {
+            deactivate_controllers.push_back(controller_name);
           }
         }
 
         if (activate_controllers.empty() && deactivate_controllers.empty()) {
-          alpha_forward_controller_selection_ = selection;
+          alpha_arm_selection_ = selection;
           RCLCPP_INFO(
             get_logger(),
-            "Active Alpha forward velocity controller: %s.",
-            getAlphaForwardControllerLabel(selection).c_str());
+            "Active Alpha controller: %s %s.",
+            getAlphaControllerModeLabel(alpha_controller_mode_).c_str(),
+            getAlphaArmSelectionLabel(selection).c_str());
           return;
         }
 
@@ -1226,19 +1388,34 @@ private:
           {
             const auto response = switch_future.get();
             if (!response->ok) {
-              RCLCPP_ERROR(get_logger(), "Failed to switch Alpha forward velocity controllers.");
+              RCLCPP_ERROR(get_logger(), "Failed to switch Alpha controllers.");
               return;
             }
 
-            alpha_forward_controller_selection_ = selection;
+            alpha_arm_selection_ = selection;
             RCLCPP_INFO(
               get_logger(),
-              "Active Alpha forward velocity controller: %s.",
-              getAlphaForwardControllerLabel(selection).c_str());
+              "Active Alpha controller: %s %s.",
+              getAlphaControllerModeLabel(alpha_controller_mode_).c_str(),
+              getAlphaArmSelectionLabel(selection).c_str());
           });
       });
 
     (void)future;
+  }
+
+  void setAlphaControllerMode(AlphaControllerMode mode)
+  {
+    if (alpha_controller_mode_ == mode) {
+      return;
+    }
+
+    alpha_controller_mode_ = mode;
+    alpha_arm_selection_ = AlphaArmSelection::None;
+    RCLCPP_INFO(
+      get_logger(),
+      "Alpha control mode changed to %s.",
+      getAlphaControllerModeLabel(alpha_controller_mode_).c_str());
   }
 
   void setTeleopMode(TeleopMode mode)
@@ -1254,13 +1431,58 @@ private:
       teleop_mode_ == TeleopMode::Arm ? "arm" : "auv");
   }
 
-  std::string getAlphaForwardControllerLabel(AlphaForwardControllerSelection selection) const
+  std::string getAlphaControllerName(AlphaControllerMode mode, AlphaArmSelection selection) const
   {
-    if (selection == AlphaForwardControllerSelection::Left) {
+    if (selection == AlphaArmSelection::Left) {
+      if (mode == AlphaControllerMode::Cartesian) {
+        return alpha_left_cartesian_velocity_controller_name_;
+      }
+      if (mode == AlphaControllerMode::Trajectory) {
+        return alpha_left_joint_trajectory_controller_name_;
+      }
       return alpha_left_forward_velocity_controller_name_;
     }
-    if (selection == AlphaForwardControllerSelection::Right) {
+    if (selection == AlphaArmSelection::Right) {
+      if (mode == AlphaControllerMode::Cartesian) {
+        return alpha_right_cartesian_velocity_controller_name_;
+      }
+      if (mode == AlphaControllerMode::Trajectory) {
+        return alpha_right_joint_trajectory_controller_name_;
+      }
       return alpha_right_forward_velocity_controller_name_;
+    }
+    return "";
+  }
+
+  std::vector<std::string> getAllAlphaControllerNames() const
+  {
+    return {
+      alpha_left_forward_velocity_controller_name_,
+      alpha_right_forward_velocity_controller_name_,
+      alpha_left_joint_trajectory_controller_name_,
+      alpha_right_joint_trajectory_controller_name_,
+      alpha_left_cartesian_velocity_controller_name_,
+      alpha_right_cartesian_velocity_controller_name_};
+  }
+
+  std::string getAlphaControllerModeLabel(AlphaControllerMode mode) const
+  {
+    if (mode == AlphaControllerMode::Cartesian) {
+      return "cartesian";
+    }
+    if (mode == AlphaControllerMode::Trajectory) {
+      return "trajectory";
+    }
+    return "joint";
+  }
+
+  std::string getAlphaArmSelectionLabel(AlphaArmSelection selection) const
+  {
+    if (selection == AlphaArmSelection::Left) {
+      return "left";
+    }
+    if (selection == AlphaArmSelection::Right) {
+      return "right";
     }
     return "none";
   }
@@ -1400,6 +1622,10 @@ private:
   int pitch_axis_{4};
   int lt_axis_{2};
   int rt_axis_{5};
+  int alpha_axis_b_axis_{3};
+  int alpha_axis_c_axis_{4};
+  int alpha_axis_d_axis_{0};
+  int alpha_axis_e_axis_{1};
 
   bool body_force_enabled_{false};
   bool body_velocity_enabled_{false};
@@ -1429,6 +1655,8 @@ private:
   std::string alpha_right_forward_velocity_controller_name_;
   std::string alpha_left_joint_trajectory_controller_name_;
   std::string alpha_right_joint_trajectory_controller_name_;
+  std::string alpha_left_cartesian_velocity_controller_name_;
+  std::string alpha_right_cartesian_velocity_controller_name_;
   std::string active_command_topic_;
   std::string body_force_command_topic_;
   std::string body_velocity_setpoint_topic_;
@@ -1437,6 +1665,10 @@ private:
   std::string depth_hold_feedforward_topic_;
   std::string alpha_left_forward_velocity_command_topic_;
   std::string alpha_right_forward_velocity_command_topic_;
+  std::string alpha_left_cartesian_velocity_command_topic_;
+  std::string alpha_right_cartesian_velocity_command_topic_;
+  std::string alpha_left_cartesian_frame_id_;
+  std::string alpha_right_cartesian_frame_id_;
   std::string stabilize_enable_roll_pitch_service_name_;
   std::string stabilize_disable_roll_pitch_service_name_;
   std::string depth_hold_enable_roll_pitch_service_name_;
@@ -1460,19 +1692,41 @@ private:
   double depth_hold_feedforward_gain_roll_{20.0};
   double depth_hold_feedforward_gain_pitch_{20.0};
   double depth_hold_feedforward_gain_yaw_{1.0};
-  double alpha_axis_a_velocity_scale_{0.01};
+  double alpha_cartesian_command_rate_{10.0};
+  double alpha_left_axis_a_velocity_scale_{0.01};
+  double alpha_left_axis_b_velocity_scale_{1.0};
+  double alpha_left_axis_c_velocity_scale_{1.0};
+  double alpha_left_axis_d_velocity_scale_{-1.0};
+  double alpha_left_axis_e_velocity_scale_{1.0};
+  double alpha_right_axis_a_velocity_scale_{0.01};
+  double alpha_right_axis_b_velocity_scale_{1.0};
+  double alpha_right_axis_c_velocity_scale_{1.0};
+  double alpha_right_axis_d_velocity_scale_{1.0};
+  double alpha_right_axis_e_velocity_scale_{-1.0};
+  double alpha_left_cartesian_linear_x_scale_{1.0};
+  double alpha_left_cartesian_linear_y_scale_{1.0};
+  double alpha_left_cartesian_linear_z_scale_{1.0};
+  double alpha_left_cartesian_angular_y_scale_{0.01};
+  double alpha_left_cartesian_angular_z_scale_{1.0};
+  double alpha_right_cartesian_linear_x_scale_{1.0};
+  double alpha_right_cartesian_linear_y_scale_{1.0};
+  double alpha_right_cartesian_linear_z_scale_{1.0};
+  double alpha_right_cartesian_angular_y_scale_{0.01};
+  double alpha_right_cartesian_angular_z_scale_{1.0};
 
   JoyMsg::SharedPtr last_joy_msg_;
   TeleopMode teleop_mode_{TeleopMode::Auv};
   CommandOutputMode command_output_mode_{CommandOutputMode::None};
-  AlphaForwardControllerSelection alpha_forward_controller_selection_{
-    AlphaForwardControllerSelection::None};
+  AlphaControllerMode alpha_controller_mode_{AlphaControllerMode::Joint};
+  AlphaArmSelection alpha_arm_selection_{AlphaArmSelection::None};
 
   rclcpp::Subscription<JoyMsg>::SharedPtr joy_sub_;
   rclcpp::Publisher<TwistMsg>::SharedPtr twist_command_pub_;
   rclcpp::Publisher<WrenchMsg>::SharedPtr wrench_command_pub_;
   rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_left_forward_velocity_command_pub_;
   rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_right_forward_velocity_command_pub_;
+  rclcpp::Publisher<TwistStampedMsg>::SharedPtr alpha_left_cartesian_velocity_command_pub_;
+  rclcpp::Publisher<TwistStampedMsg>::SharedPtr alpha_right_cartesian_velocity_command_pub_;
   rclcpp::Client<ListControllersSrv>::SharedPtr list_controllers_client_;
   rclcpp::Client<SwitchControllerSrv>::SharedPtr switch_controller_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr stabilize_enable_roll_pitch_client_;
@@ -1481,6 +1735,7 @@ private:
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr depth_hold_disable_roll_pitch_client_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr alpha_forward_timer_;
+  rclcpp::TimerBase::SharedPtr alpha_cartesian_timer_;
 };
 
 int main(int argc, char ** argv)
