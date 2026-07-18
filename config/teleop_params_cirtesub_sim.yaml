@@ -81,6 +81,26 @@ sura_teleop:
       name: alpha_right_forward_velocity_controller
       command_topic: /sura/controller/alpha_right_forward_velocity_controller/commands
 
+    alpha_left_gripper_velocity_controller:
+      name: alpha_left_gripper_velocity_controller
+      command_topic: /sura/controller/alpha_left_gripper_velocity_controller/commands
+
+    alpha_right_gripper_velocity_controller:
+      name: alpha_right_gripper_velocity_controller
+      command_topic: /sura/controller/alpha_right_gripper_velocity_controller/commands
+
+    alpha_left_forward_position_controller:
+      name: alpha_left_forward_position_controller
+
+    alpha_right_forward_position_controller:
+      name: alpha_right_forward_position_controller
+
+    alpha_left_gripper_position_controller:
+      name: alpha_left_gripper_position_controller
+
+    alpha_right_gripper_position_controller:
+      name: alpha_right_gripper_position_controller
+
     alpha_left_joint_trajectory_controller:
       name: alpha_left_joint_trajectory_controller
 

@@ -108,6 +108,24 @@ public:
       "alpha_right_forward_velocity_controller.name",
       "alpha_right_forward_velocity_controller");
     declare_parameter<std::string>(
+      "alpha_left_gripper_velocity_controller.name",
+      "alpha_left_gripper_velocity_controller");
+    declare_parameter<std::string>(
+      "alpha_right_gripper_velocity_controller.name",
+      "alpha_right_gripper_velocity_controller");
+    declare_parameter<std::string>(
+      "alpha_left_forward_position_controller.name",
+      "alpha_left_forward_position_controller");
+    declare_parameter<std::string>(
+      "alpha_right_forward_position_controller.name",
+      "alpha_right_forward_position_controller");
+    declare_parameter<std::string>(
+      "alpha_left_gripper_position_controller.name",
+      "alpha_left_gripper_position_controller");
+    declare_parameter<std::string>(
+      "alpha_right_gripper_position_controller.name",
+      "alpha_right_gripper_position_controller");
+    declare_parameter<std::string>(
       "alpha_left_joint_trajectory_controller.name",
       "alpha_left_joint_trajectory_controller");
     declare_parameter<std::string>(
@@ -125,6 +143,12 @@ public:
     declare_parameter<std::string>(
       "alpha_right_forward_velocity_controller.command_topic",
       "/cirtesub/controller/alpha_right_forward_velocity_controller/commands");
+    declare_parameter<std::string>(
+      "alpha_left_gripper_velocity_controller.command_topic",
+      "/cirtesub/controller/alpha_left_gripper_velocity_controller/commands");
+    declare_parameter<std::string>(
+      "alpha_right_gripper_velocity_controller.command_topic",
+      "/cirtesub/controller/alpha_right_gripper_velocity_controller/commands");
     declare_parameter<std::string>(
       "alpha_left_cartesian_velocity_controller.command_topic",
       "/cirtesub/controller/alpha_left_cartesian_velocity_controller/twist");
@@ -255,6 +279,18 @@ public:
       get_parameter("alpha_left_forward_velocity_controller.name").as_string();
     alpha_right_forward_velocity_controller_name_ =
       get_parameter("alpha_right_forward_velocity_controller.name").as_string();
+    alpha_left_gripper_velocity_controller_name_ =
+      get_parameter("alpha_left_gripper_velocity_controller.name").as_string();
+    alpha_right_gripper_velocity_controller_name_ =
+      get_parameter("alpha_right_gripper_velocity_controller.name").as_string();
+    alpha_left_forward_position_controller_name_ =
+      get_parameter("alpha_left_forward_position_controller.name").as_string();
+    alpha_right_forward_position_controller_name_ =
+      get_parameter("alpha_right_forward_position_controller.name").as_string();
+    alpha_left_gripper_position_controller_name_ =
+      get_parameter("alpha_left_gripper_position_controller.name").as_string();
+    alpha_right_gripper_position_controller_name_ =
+      get_parameter("alpha_right_gripper_position_controller.name").as_string();
     alpha_left_joint_trajectory_controller_name_ =
       get_parameter("alpha_left_joint_trajectory_controller.name").as_string();
     alpha_right_joint_trajectory_controller_name_ =
@@ -267,6 +303,10 @@ public:
       get_parameter("alpha_left_forward_velocity_controller.command_topic").as_string();
     alpha_right_forward_velocity_command_topic_ =
       get_parameter("alpha_right_forward_velocity_controller.command_topic").as_string();
+    alpha_left_gripper_velocity_command_topic_ =
+      get_parameter("alpha_left_gripper_velocity_controller.command_topic").as_string();
+    alpha_right_gripper_velocity_command_topic_ =
+      get_parameter("alpha_right_gripper_velocity_controller.command_topic").as_string();
     alpha_left_cartesian_velocity_command_topic_ =
       get_parameter("alpha_left_cartesian_velocity_controller.command_topic").as_string();
     alpha_right_cartesian_velocity_command_topic_ =
@@ -354,6 +394,12 @@ public:
       rclcpp::SystemDefaultsQoS());
     alpha_right_forward_velocity_command_pub_ = create_publisher<Float64MultiArrayMsg>(
       alpha_right_forward_velocity_command_topic_,
+      rclcpp::SystemDefaultsQoS());
+    alpha_left_gripper_velocity_command_pub_ = create_publisher<Float64MultiArrayMsg>(
+      alpha_left_gripper_velocity_command_topic_,
+      rclcpp::SystemDefaultsQoS());
+    alpha_right_gripper_velocity_command_pub_ = create_publisher<Float64MultiArrayMsg>(
+      alpha_right_gripper_velocity_command_topic_,
       rclcpp::SystemDefaultsQoS());
     alpha_left_cartesian_velocity_command_pub_ = create_publisher<TwistStampedMsg>(
       alpha_left_cartesian_velocity_command_topic_,
@@ -692,16 +738,19 @@ private:
 
     Float64MultiArrayMsg command_msg;
     command_msg.data = {
-      axis_a_command,
       axis_b_command,
       axis_c_command,
       axis_d_command,
       axis_e_command};
+    Float64MultiArrayMsg gripper_command_msg;
+    gripper_command_msg.data = {axis_a_command};
 
     if (alpha_arm_selection_ == AlphaArmSelection::Left) {
       alpha_left_forward_velocity_command_pub_->publish(command_msg);
+      alpha_left_gripper_velocity_command_pub_->publish(gripper_command_msg);
     } else if (alpha_arm_selection_ == AlphaArmSelection::Right) {
       alpha_right_forward_velocity_command_pub_->publish(command_msg);
+      alpha_right_gripper_velocity_command_pub_->publish(gripper_command_msg);
     }
   }
 
@@ -1358,11 +1407,13 @@ private:
 
         const std::string target_controller =
           getAlphaControllerName(alpha_controller_mode_, selection);
+        const std::string target_gripper_controller =
+          getAlphaGripperControllerName(alpha_controller_mode_, selection);
         for (const auto & controller_name : getAllAlphaControllerNames()) {
           if (controller_name.empty()) {
             continue;
           }
-          if (controller_name == target_controller) {
+          if (controller_name == target_controller || controller_name == target_gripper_controller) {
             if (!is_active(controller_name)) {
               activate_controllers.push_back(controller_name);
             }
@@ -1454,11 +1505,33 @@ private:
     return "";
   }
 
+  std::string getAlphaGripperControllerName(
+    AlphaControllerMode mode,
+    AlphaArmSelection selection) const
+  {
+    if (mode != AlphaControllerMode::Joint) {
+      return "";
+    }
+    if (selection == AlphaArmSelection::Left) {
+      return alpha_left_gripper_velocity_controller_name_;
+    }
+    if (selection == AlphaArmSelection::Right) {
+      return alpha_right_gripper_velocity_controller_name_;
+    }
+    return "";
+  }
+
   std::vector<std::string> getAllAlphaControllerNames() const
   {
     return {
       alpha_left_forward_velocity_controller_name_,
       alpha_right_forward_velocity_controller_name_,
+      alpha_left_gripper_velocity_controller_name_,
+      alpha_right_gripper_velocity_controller_name_,
+      alpha_left_forward_position_controller_name_,
+      alpha_right_forward_position_controller_name_,
+      alpha_left_gripper_position_controller_name_,
+      alpha_right_gripper_position_controller_name_,
       alpha_left_joint_trajectory_controller_name_,
       alpha_right_joint_trajectory_controller_name_,
       alpha_left_cartesian_velocity_controller_name_,
@@ -1653,6 +1726,12 @@ private:
   std::string depth_hold_controller_name_;
   std::string alpha_left_forward_velocity_controller_name_;
   std::string alpha_right_forward_velocity_controller_name_;
+  std::string alpha_left_gripper_velocity_controller_name_;
+  std::string alpha_right_gripper_velocity_controller_name_;
+  std::string alpha_left_forward_position_controller_name_;
+  std::string alpha_right_forward_position_controller_name_;
+  std::string alpha_left_gripper_position_controller_name_;
+  std::string alpha_right_gripper_position_controller_name_;
   std::string alpha_left_joint_trajectory_controller_name_;
   std::string alpha_right_joint_trajectory_controller_name_;
   std::string alpha_left_cartesian_velocity_controller_name_;
@@ -1665,6 +1744,8 @@ private:
   std::string depth_hold_feedforward_topic_;
   std::string alpha_left_forward_velocity_command_topic_;
   std::string alpha_right_forward_velocity_command_topic_;
+  std::string alpha_left_gripper_velocity_command_topic_;
+  std::string alpha_right_gripper_velocity_command_topic_;
   std::string alpha_left_cartesian_velocity_command_topic_;
   std::string alpha_right_cartesian_velocity_command_topic_;
   std::string alpha_left_cartesian_frame_id_;
@@ -1725,6 +1806,8 @@ private:
   rclcpp::Publisher<WrenchMsg>::SharedPtr wrench_command_pub_;
   rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_left_forward_velocity_command_pub_;
   rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_right_forward_velocity_command_pub_;
+  rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_left_gripper_velocity_command_pub_;
+  rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_right_gripper_velocity_command_pub_;
   rclcpp::Publisher<TwistStampedMsg>::SharedPtr alpha_left_cartesian_velocity_command_pub_;
   rclcpp::Publisher<TwistStampedMsg>::SharedPtr alpha_right_cartesian_velocity_command_pub_;
   rclcpp::Client<ListControllersSrv>::SharedPtr list_controllers_client_;
