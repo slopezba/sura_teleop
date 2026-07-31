@@ -2,8 +2,17 @@ sura_teleop:
   ros__parameters:
     rate: 20.0
     joy_topic: /joy
-    controller_switch_service: /sura/controller/controller_manager/switch_controller
+    controller_switch_service: /sura/controller/arbitrator/switch_controller
     controller_list_service: /sura/controller/controller_manager/list_controllers
+    controller_interlock_service: /sura/controller/arbitrator/controller_interlock
+
+    autonomous_mode:
+      enabled: true
+      topic: teleop/autonomous_enabled
+      behavior: deadman
+      axis: 2
+      value: -1.0
+      tolerance: 0.05
 
     body_force_controller:
       name: body_force
@@ -22,6 +31,7 @@ sura_teleop:
     position_hold_controller:
       name: position_hold
       feedforward_topic: /sura/controller/position_hold/feedforward
+      reposition_feedforward_topic: /sura/controller/position_hold/reposition_feedforward
 
     stabilize_controller:
       name: stabilize

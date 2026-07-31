@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <future>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -13,8 +14,13 @@
 #include "geometry_msgs/msg/wrench.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joy.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "std_srvs/srv/trigger.hpp"
+#include "sura_msgs/msg/sura_velocity_command.hpp"
+#include "sura_msgs/msg/sura_wrench_command.hpp"
+#include "sura_msgs/srv/clear_controller_intents.hpp"
+#include "sura_msgs/srv/controller_interlock.hpp"
 
 class CirtesubTeleop : public rclcpp::Node
 {
@@ -24,8 +30,26 @@ public:
   {
     declare_parameter<double>("rate", 20.0);
     declare_parameter<std::string>("joy_topic", "/joy");
+    declare_parameter<std::string>("requester", "teleop");
+    declare_parameter<int>("priority", 80);
+    declare_parameter<int>("idle_priority", 50);
+    declare_parameter<double>("idle_priority_delay", 3.0);
     declare_parameter<std::string>(
-      "controller_switch_service", "/cirtesub/controller/controller_manager/switch_controller");
+      "arbitrator_velocity_topic", "controller/arbitrator/velocity");
+    declare_parameter<std::string>(
+      "arbitrator_wrench_topic", "controller/arbitrator/wrench");
+    declare_parameter<std::string>(
+      "clear_controller_intents_service", "controller/arbitrator/clear_controller_intents");
+    declare_parameter<std::string>(
+      "controller_interlock_service", "controller/arbitrator/controller_interlock");
+    declare_parameter<bool>("autonomous_mode.enabled", true);
+    declare_parameter<std::string>("autonomous_mode.topic", "teleop/autonomous_enabled");
+    declare_parameter<std::string>("autonomous_mode.behavior", "deadman");
+    declare_parameter<int>("autonomous_mode.axis", 2);
+    declare_parameter<double>("autonomous_mode.value", -1.0);
+    declare_parameter<double>("autonomous_mode.tolerance", 0.05);
+    declare_parameter<std::string>(
+      "controller_switch_service", "/cirtesub/controller/arbitrator/switch_controller");
     declare_parameter<std::string>(
       "controller_list_service", "/cirtesub/controller/controller_manager/list_controllers");
     declare_parameter<std::string>("body_force_controller.name", "body_force");
@@ -44,8 +68,14 @@ public:
       "/cirtesub/controller/body_velocity/setpoint");
     declare_parameter<std::string>("position_hold_controller.name", "position_hold");
     declare_parameter<std::string>(
+      "position_hold_controller.reposition_controller_name",
+      "position_hold_reposition");
+    declare_parameter<std::string>(
       "position_hold_controller.feedforward_topic",
       "/cirtesub/controller/position_hold/feedforward");
+    declare_parameter<std::string>(
+      "position_hold_controller.reposition_feedforward_topic",
+      "/cirtesub/controller/position_hold/reposition_feedforward");
     declare_parameter<std::string>("stabilize_controller.name", "stabilize");
     declare_parameter<std::string>(
       "stabilize_controller.feedforward_topic",
@@ -126,6 +156,24 @@ public:
 
     rate_ = get_parameter("rate").as_double();
     joy_topic_ = get_parameter("joy_topic").as_string();
+    requester_ = get_parameter("requester").as_string();
+    priority_ = static_cast<int>(std::clamp<int64_t>(get_parameter("priority").as_int(), 1, 100));
+    idle_priority_ = static_cast<int>(
+      std::clamp<int64_t>(get_parameter("idle_priority").as_int(), 1, 100));
+    idle_priority_delay_ = std::max(0.0, get_parameter("idle_priority_delay").as_double());
+    arbitrator_velocity_topic_ = get_parameter("arbitrator_velocity_topic").as_string();
+    arbitrator_wrench_topic_ = get_parameter("arbitrator_wrench_topic").as_string();
+    clear_controller_intents_service_ =
+      get_parameter("clear_controller_intents_service").as_string();
+    controller_interlock_service_ =
+      get_parameter("controller_interlock_service").as_string();
+    autonomous_mode_enabled_ = get_parameter("autonomous_mode.enabled").as_bool();
+    autonomous_mode_topic_ = get_parameter("autonomous_mode.topic").as_string();
+    autonomous_mode_behavior_ = get_parameter("autonomous_mode.behavior").as_string();
+    autonomous_mode_axis_ = get_parameter("autonomous_mode.axis").as_int();
+    autonomous_mode_value_ = get_parameter("autonomous_mode.value").as_double();
+    autonomous_mode_tolerance_ =
+      std::max(0.0, get_parameter("autonomous_mode.tolerance").as_double());
     controller_switch_service_ = get_parameter("controller_switch_service").as_string();
     controller_list_service_ = get_parameter("controller_list_service").as_string();
     body_force_controller_name_ = get_parameter("body_force_controller.name").as_string();
@@ -146,8 +194,12 @@ public:
     body_velocity_setpoint_topic_ =
       get_parameter("body_velocity_controller.setpoint_topic").as_string();
     position_hold_controller_name_ = get_parameter("position_hold_controller.name").as_string();
+    position_hold_reposition_controller_name_ =
+      get_parameter("position_hold_controller.reposition_controller_name").as_string();
     position_hold_feedforward_topic_ =
       get_parameter("position_hold_controller.feedforward_topic").as_string();
+    position_hold_reposition_feedforward_topic_ =
+      get_parameter("position_hold_controller.reposition_feedforward_topic").as_string();
     stabilize_controller_name_ = get_parameter("stabilize_controller.name").as_string();
     stabilize_feedforward_topic_ =
       get_parameter("stabilize_controller.feedforward_topic").as_string();
@@ -236,12 +288,16 @@ public:
       rclcpp::SystemDefaultsQoS(),
       std::bind(&CirtesubTeleop::joyCallback, this, std::placeholders::_1));
 
-    updateWrenchPublisher(stabilize_feedforward_topic_);
+    updateWrenchPublisher(stabilize_controller_name_);
 
     switch_controller_client_ =
       create_client<controller_manager_msgs::srv::SwitchController>(controller_switch_service_);
     list_controllers_client_ =
       create_client<controller_manager_msgs::srv::ListControllers>(controller_list_service_);
+    clear_controller_intents_client_ =
+      create_client<sura_msgs::srv::ClearControllerIntents>(clear_controller_intents_service_);
+    controller_interlock_client_ =
+      create_client<sura_msgs::srv::ControllerInterlock>(controller_interlock_service_);
     stabilize_enable_roll_pitch_client_ =
       create_client<std_srvs::srv::Trigger>(stabilize_enable_roll_pitch_service_name_);
     stabilize_disable_roll_pitch_client_ =
@@ -256,10 +312,28 @@ public:
     alpha_right_forward_velocity_command_pub_ = create_publisher<Float64MultiArrayMsg>(
       alpha_right_forward_velocity_command_topic_,
       rclcpp::SystemDefaultsQoS());
-
+    velocity_intent_pub_ = create_publisher<SuraVelocityCommandMsg>(
+      arbitrator_velocity_topic_,
+      rclcpp::SystemDefaultsQoS());
+    wrench_intent_pub_ = create_publisher<SuraWrenchCommandMsg>(
+      arbitrator_wrench_topic_,
+      rclcpp::SystemDefaultsQoS());
+    autonomous_enabled_pub_ = create_publisher<BoolMsg>(
+      autonomous_mode_topic_,
+      rclcpp::SystemDefaultsQoS());
+    publishAutonomousMode(false);
+    position_hold_feedforward_pub_ = create_publisher<TwistMsg>(
+      position_hold_feedforward_topic_,
+      rclcpp::SystemDefaultsQoS());
+    position_hold_reposition_feedforward_pub_ = create_publisher<TwistMsg>(
+      position_hold_reposition_feedforward_topic_,
+      rclcpp::SystemDefaultsQoS());
     timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / rate_),
       std::bind(&CirtesubTeleop::timerCallback, this));
+    controller_interlock_timer_ = create_wall_timer(
+      std::chrono::milliseconds(500),
+      std::bind(&CirtesubTeleop::updateControllerInterlockState, this));
 
     if (alpha_forward_command_rate_ <= 0.0) {
       RCLCPP_WARN(
@@ -283,7 +357,7 @@ public:
       body_force_controller_name_.c_str(),
       alpha_left_forward_velocity_controller_name_.c_str(),
       alpha_right_forward_velocity_controller_name_.c_str(),
-      active_command_topic_.c_str());
+      active_command_controller_.c_str());
   }
 
 private:
@@ -291,8 +365,12 @@ private:
   using TwistMsg = geometry_msgs::msg::Twist;
   using WrenchMsg = geometry_msgs::msg::Wrench;
   using Float64MultiArrayMsg = std_msgs::msg::Float64MultiArray;
+  using BoolMsg = std_msgs::msg::Bool;
+  using SuraVelocityCommandMsg = sura_msgs::msg::SuraVelocityCommand;
+  using SuraWrenchCommandMsg = sura_msgs::msg::SuraWrenchCommand;
   using ListControllersSrv = controller_manager_msgs::srv::ListControllers;
   using SwitchControllerSrv = controller_manager_msgs::srv::SwitchController;
+  using ControllerInterlockSrv = sura_msgs::srv::ControllerInterlock;
 
   enum class AlphaForwardControllerSelection
   {
@@ -314,39 +392,127 @@ private:
     Wrench
   };
 
-  void updateTwistPublisher(const std::string & topic_name)
+  void updateTwistPublisher(const std::string & controller_name)
   {
-    active_command_topic_ = topic_name;
-    wrench_command_pub_.reset();
-    twist_command_pub_ = create_publisher<TwistMsg>(
-      active_command_topic_,
-      rclcpp::SystemDefaultsQoS());
+    active_command_controller_ = controller_name;
     command_output_mode_ = CommandOutputMode::Twist;
   }
 
-  void updateWrenchPublisher(const std::string & topic_name)
+  void updateWrenchPublisher(const std::string & controller_name)
   {
-    active_command_topic_ = topic_name;
-    twist_command_pub_.reset();
-    wrench_command_pub_ = create_publisher<WrenchMsg>(
-      active_command_topic_,
-      rclcpp::SystemDefaultsQoS());
+    active_command_controller_ = controller_name;
     command_output_mode_ = CommandOutputMode::Wrench;
   }
 
   void publishZeroFeedforward()
   {
-    if (command_output_mode_ == CommandOutputMode::Twist && twist_command_pub_) {
-      twist_command_pub_->publish(TwistMsg{});
+    if (active_command_controller_.empty()) {
+      return;
     }
-    if (command_output_mode_ == CommandOutputMode::Wrench && wrench_command_pub_) {
-      wrench_command_pub_->publish(WrenchMsg{});
+    if (command_output_mode_ == CommandOutputMode::Twist) {
+      publishVelocityIntent(active_command_controller_, TwistMsg{});
     }
+    if (command_output_mode_ == CommandOutputMode::Wrench) {
+      publishWrenchIntent(active_command_controller_, WrenchMsg{});
+    }
+  }
+
+  void publishVelocityIntent(
+    const std::string & controller_name,
+    const TwistMsg & velocity,
+    int priority = -1)
+  {
+    const bool position_hold_reposition_mode =
+      position_hold_enabled_ || controller_name == position_hold_controller_name_;
+
+    // Manual teleop in position_hold must be a direct "jog/reposition" signal so the hold
+    // setpoint follows the vehicle and releasing the joystick keeps the new pose.  We still
+    // also publish an arbitrator intent below, so higher-priority velocity requests can
+    // preempt it and be routed as temporary overrides.
+    if (position_hold_reposition_mode && position_hold_reposition_feedforward_pub_) {
+      position_hold_reposition_feedforward_pub_->publish(velocity);
+    }
+
+    if (!velocity_intent_pub_) {
+      return;
+    }
+
+    const int message_priority = normalizePriority(priority);
+
+    SuraVelocityCommandMsg msg;
+    msg.header.stamp = now();
+    msg.requester = requester_;
+    msg.controller = position_hold_reposition_mode ?
+      position_hold_reposition_controller_name_ : controller_name;
+    msg.priority = static_cast<uint8_t>(message_priority);
+    msg.velocity = velocity;
+    velocity_intent_pub_->publish(msg);
+  }
+
+  void publishWrenchIntent(
+    const std::string & controller_name,
+    const WrenchMsg & wrench,
+    int priority = -1)
+  {
+    if (!wrench_intent_pub_) {
+      return;
+    }
+
+    const int message_priority = normalizePriority(priority);
+
+    SuraWrenchCommandMsg msg;
+    msg.header.stamp = now();
+    msg.requester = requester_;
+    msg.controller = controller_name;
+    msg.priority = static_cast<uint8_t>(message_priority);
+    msg.wrench = wrench;
+    wrench_intent_pub_->publish(msg);
+  }
+
+  void clearControllerIntents(const std::string & controller_name)
+  {
+    if (controller_name.empty() || !clear_controller_intents_client_) {
+      return;
+    }
+    if (!clear_controller_intents_client_->service_is_ready()) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(),
+        *get_clock(),
+        2000,
+        "Clear controller intents service '%s' is not available.",
+        clear_controller_intents_service_.c_str());
+      return;
+    }
+    auto request = std::make_shared<sura_msgs::srv::ClearControllerIntents::Request>();
+    request->controller = controller_name;
+    (void)clear_controller_intents_client_->async_send_request(request);
+  }
+
+  void clearManualControllerIntents()
+  {
+    clearControllerIntents(body_force_controller_name_);
+    clearControllerIntents(body_velocity_controller_name_);
+    clearControllerIntents(position_hold_controller_name_);
+    clearControllerIntents(position_hold_reposition_controller_name_);
+    clearControllerIntents(stabilize_controller_name_);
+    clearControllerIntents(depth_hold_controller_name_);
   }
 
   void joyCallback(const JoyMsg::SharedPtr msg)
   {
     last_joy_msg_ = msg;
+    updateAutonomousMode(*msg);
+
+    if (autonomous_enabled_) {
+      last_body_velocity_combo_state_ = false;
+      last_position_hold_combo_state_ = false;
+      last_stabilize_combo_state_ = false;
+      last_depth_hold_combo_state_ = false;
+      last_body_force_combo_state_ = false;
+      last_left_stick_button_state_ = false;
+      last_right_stick_button_state_ = false;
+      return;
+    }
 
     if (
       !isValidButtonIndex(msg->buttons, a_button_) ||
@@ -448,6 +614,10 @@ private:
       return;
     }
 
+    if (autonomous_enabled_) {
+      return;
+    }
+
     const bool direct_body_force_enabled = body_force_enabled_ && !body_velocity_enabled_ &&
       !position_hold_enabled_ && !stabilize_enabled_ && !depth_hold_enabled_;
 
@@ -480,13 +650,25 @@ private:
       }
     }
 
-    if (direct_body_force_enabled && active_command_topic_ != body_force_command_topic_) {
-      updateWrenchPublisher(body_force_command_topic_);
+    if (position_hold_enabled_ && active_command_controller_ != position_hold_controller_name_) {
+      // body_velocity is active underneath position_hold, but manual joystick commands
+      // must be treated as hold reposition commands, not as temporary overrides.
+      updateTwistPublisher(position_hold_controller_name_);
     }
 
-    if (command_output_mode_ == CommandOutputMode::Twist && twist_command_pub_) {
-      twist_command_pub_->publish(twist_cmd);
-    } else if (command_output_mode_ == CommandOutputMode::Wrench && wrench_command_pub_) {
+    if (direct_body_force_enabled && active_command_controller_ != body_force_controller_name_) {
+      updateWrenchPublisher(body_force_controller_name_);
+    }
+
+    const bool has_manual_input =
+      command_output_mode_ == CommandOutputMode::Twist ?
+      hasTwistInput(twist_cmd) :
+      command_output_mode_ == CommandOutputMode::Wrench && hasWrenchInput(wrench_cmd);
+    const int teleop_priority = computeTeleopPriority(has_manual_input);
+
+    if (command_output_mode_ == CommandOutputMode::Twist) {
+      publishVelocityIntent(active_command_controller_, twist_cmd, teleop_priority);
+    } else if (command_output_mode_ == CommandOutputMode::Wrench) {
       if (direct_body_force_enabled) {
         wrench_cmd.force.x *= body_force_feedforward_gain_x_;
         wrench_cmd.force.y *= body_force_feedforward_gain_y_;
@@ -494,7 +676,7 @@ private:
         wrench_cmd.torque.x *= body_force_feedforward_gain_roll_;
         wrench_cmd.torque.y *= body_force_feedforward_gain_pitch_;
         wrench_cmd.torque.z *= body_force_feedforward_gain_yaw_;
-        wrench_command_pub_->publish(wrench_cmd);
+        publishWrenchIntent(active_command_controller_, wrench_cmd, teleop_priority);
         return;
       }
 
@@ -520,7 +702,7 @@ private:
       wrench_cmd.torque.x *= feedforward_gain_roll;
       wrench_cmd.torque.y *= feedforward_gain_pitch;
       wrench_cmd.torque.z *= feedforward_gain_yaw;
-      wrench_command_pub_->publish(wrench_cmd);
+      publishWrenchIntent(active_command_controller_, wrench_cmd, teleop_priority);
     }
   }
 
@@ -703,8 +885,9 @@ private:
           body_force_enabled_ = true;
           body_velocity_enabled_ = false;
           position_hold_enabled_ = false;
+          clearControllerIntents(position_hold_controller_name_);
           depth_hold_enabled_ = false;
-          updateWrenchPublisher(stabilize_feedforward_topic_);
+          updateWrenchPublisher(stabilize_controller_name_);
         } else {
           body_velocity_enabled_ = false;
         }
@@ -717,6 +900,7 @@ private:
 
         if (!stabilize_enabled_) {
           publishZeroFeedforward();
+          clearControllerIntents(stabilize_controller_name_);
         }
       });
   }
@@ -792,8 +976,9 @@ private:
           body_force_enabled_ = true;
           body_velocity_enabled_ = false;
           position_hold_enabled_ = false;
+          clearControllerIntents(position_hold_controller_name_);
           stabilize_enabled_ = false;
-          updateWrenchPublisher(depth_hold_feedforward_topic_);
+          updateWrenchPublisher(depth_hold_controller_name_);
         }
         depth_hold_enabled_ = enable;
         RCLCPP_INFO(
@@ -804,7 +989,8 @@ private:
 
         if (!depth_hold_enabled_) {
           publishZeroFeedforward();
-          updateWrenchPublisher(stabilize_feedforward_topic_);
+          clearControllerIntents(depth_hold_controller_name_);
+          updateWrenchPublisher(stabilize_controller_name_);
         }
       });
   }
@@ -881,8 +1067,9 @@ private:
           body_force_enabled_ = true;
           stabilize_enabled_ = false;
           position_hold_enabled_ = false;
+          clearControllerIntents(position_hold_controller_name_);
           depth_hold_enabled_ = true;
-          updateTwistPublisher(body_velocity_setpoint_topic_);
+          updateTwistPublisher(body_velocity_controller_name_);
         }
         body_velocity_enabled_ = enable;
         RCLCPP_INFO(
@@ -893,8 +1080,9 @@ private:
 
         if (!body_velocity_enabled_) {
           publishZeroFeedforward();
+          clearControllerIntents(body_velocity_controller_name_);
           depth_hold_enabled_ = true;
-          updateWrenchPublisher(depth_hold_feedforward_topic_);
+          updateWrenchPublisher(depth_hold_controller_name_);
         }
       });
   }
@@ -974,12 +1162,13 @@ private:
           stabilize_enabled_ = false;
           depth_hold_enabled_ = true;
           position_hold_enabled_ = true;
-          updateTwistPublisher(position_hold_feedforward_topic_);
+          updateTwistPublisher(position_hold_controller_name_);
         } else {
           position_hold_enabled_ = false;
           publishZeroFeedforward();
+          clearControllerIntents(position_hold_controller_name_);
           depth_hold_enabled_ = true;
-          updateWrenchPublisher(depth_hold_feedforward_topic_);
+          updateWrenchPublisher(depth_hold_controller_name_);
         }
 
         RCLCPP_INFO(
@@ -1064,7 +1253,7 @@ private:
           stabilize_enabled_ = false;
           depth_hold_enabled_ = false;
           publishZeroFeedforward();
-          updateWrenchPublisher(stabilize_feedforward_topic_);
+          updateWrenchPublisher(stabilize_controller_name_);
         }
 
         RCLCPP_INFO(
@@ -1110,6 +1299,121 @@ private:
         response_callback(future_response);
       });
 
+    (void)future;
+  }
+
+  bool activationBlockedByInterlock(
+    const std::vector<std::string> & activate_controllers,
+    std::string & message)
+  {
+    if (!controller_interlock_enabled_) {
+      return false;
+    }
+
+    for (const auto & controller : activate_controllers) {
+      if (std::find(
+          controller_interlock_blocked_controllers_.begin(),
+          controller_interlock_blocked_controllers_.end(),
+          controller) != controller_interlock_blocked_controllers_.end())
+      {
+        message =
+          "controller '" + controller + "' is blocked by safety interlock: " +
+          controller_interlock_reason_;
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  void updateAutonomousMode(const JoyMsg & msg)
+  {
+    const bool pattern_active = autonomousModePatternActive(msg);
+    const bool was_autonomous_enabled = autonomous_enabled_;
+
+    if (!autonomous_mode_enabled_) {
+      autonomous_enabled_ = false;
+    } else if (autonomous_mode_behavior_ == "toggle") {
+      if (pattern_active && !last_autonomous_mode_pattern_state_) {
+        autonomous_enabled_ = !autonomous_enabled_;
+      }
+    } else {
+      autonomous_enabled_ = pattern_active;
+    }
+
+    last_autonomous_mode_pattern_state_ = pattern_active;
+    publishAutonomousMode(autonomous_enabled_);
+
+    if (was_autonomous_enabled != autonomous_enabled_) {
+      if (autonomous_enabled_) {
+        clearManualControllerIntents();
+      }
+      RCLCPP_INFO(
+        get_logger(),
+        "Autonomous mode %s.",
+        autonomous_enabled_ ? "enabled" : "disabled");
+    }
+
+  }
+
+  bool autonomousModePatternActive(const JoyMsg & msg) const
+  {
+    if (!autonomous_mode_enabled_) {
+      return false;
+    }
+    if (!isValidAxisIndex(msg.axes, autonomous_mode_axis_)) {
+      return false;
+    }
+
+    return std::abs(
+      static_cast<double>(msg.axes[static_cast<size_t>(autonomous_mode_axis_)]) -
+      autonomous_mode_value_) <= autonomous_mode_tolerance_;
+  }
+
+  void publishAutonomousMode(bool enabled)
+  {
+    if (!autonomous_enabled_pub_) {
+      return;
+    }
+
+    BoolMsg msg;
+    msg.data = enabled;
+    autonomous_enabled_pub_->publish(msg);
+  }
+
+  void updateControllerInterlockState()
+  {
+    if (controller_interlock_query_in_progress_) {
+      return;
+    }
+    if (!controller_interlock_client_->service_is_ready()) {
+      return;
+    }
+
+    auto request = std::make_shared<ControllerInterlockSrv::Request>();
+    request->command = ControllerInterlockSrv::Request::QUERY;
+
+    controller_interlock_query_in_progress_ = true;
+    const auto future = controller_interlock_client_->async_send_request(
+      request,
+      [this](rclcpp::Client<ControllerInterlockSrv>::SharedFuture future_response)
+      {
+        controller_interlock_query_in_progress_ = false;
+        const auto response = future_response.get();
+        if (!response->success) {
+          RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            2000,
+            "Controller interlock query failed: %s",
+            response->message.c_str());
+          return;
+        }
+
+        controller_interlock_enabled_ = response->enabled;
+        controller_interlock_reason_ = response->reason;
+        controller_interlock_blocked_controllers_ = response->blocked_controllers;
+      });
     (void)future;
   }
 
@@ -1343,6 +1647,53 @@ private:
     (void)future;
   }
 
+  int normalizePriority(int priority) const
+  {
+    const int selected_priority = priority < 0 ? priority_ : priority;
+    return static_cast<int>(std::clamp<int64_t>(selected_priority, 1, 100));
+  }
+
+  bool hasTwistInput(const TwistMsg & twist) const
+  {
+    constexpr double epsilon = 1e-9;
+    return std::abs(twist.linear.x) > epsilon ||
+      std::abs(twist.linear.y) > epsilon ||
+      std::abs(twist.linear.z) > epsilon ||
+      std::abs(twist.angular.x) > epsilon ||
+      std::abs(twist.angular.y) > epsilon ||
+      std::abs(twist.angular.z) > epsilon;
+  }
+
+  bool hasWrenchInput(const WrenchMsg & wrench) const
+  {
+    constexpr double epsilon = 1e-9;
+    return std::abs(wrench.force.x) > epsilon ||
+      std::abs(wrench.force.y) > epsilon ||
+      std::abs(wrench.force.z) > epsilon ||
+      std::abs(wrench.torque.x) > epsilon ||
+      std::abs(wrench.torque.y) > epsilon ||
+      std::abs(wrench.torque.z) > epsilon;
+  }
+
+  int computeTeleopPriority(bool has_manual_input)
+  {
+    const int64_t now_ns = now().nanoseconds();
+
+    if (has_manual_input) {
+      last_manual_input_time_ns_ = now_ns;
+      return priority_;
+    }
+
+    if (last_manual_input_time_ns_ == 0) {
+      return idle_priority_;
+    }
+
+    const double idle_seconds =
+      static_cast<double>(now_ns - last_manual_input_time_ns_) * 1e-9;
+
+    return idle_seconds >= idle_priority_delay_ ? idle_priority_ : priority_;
+  }
+
   double readAxis(const std::vector<float> & axes, int index) const
   {
     if (!isValidAxisIndex(axes, index)) {
@@ -1414,25 +1765,45 @@ private:
   bool last_left_stick_button_state_{false};
   bool last_right_stick_button_state_{false};
   bool switch_in_progress_{false};
+  bool controller_interlock_enabled_{false};
+  bool controller_interlock_query_in_progress_{false};
+  bool autonomous_mode_enabled_{true};
+  bool autonomous_enabled_{false};
+  bool last_autonomous_mode_pattern_state_{false};
   int last_hat_horizontal_state_{0};
   int last_hat_vertical_state_{0};
 
   std::string joy_topic_;
+  std::string requester_;
+  int priority_{80};
+  int idle_priority_{50};
+  double idle_priority_delay_{3.0};
+  int64_t last_manual_input_time_ns_{0};
+  int autonomous_mode_axis_{2};
+  std::string arbitrator_velocity_topic_;
+  std::string arbitrator_wrench_topic_;
+  std::string clear_controller_intents_service_;
+  std::string controller_interlock_service_;
+  std::string controller_interlock_reason_;
+  std::string autonomous_mode_topic_;
+  std::string autonomous_mode_behavior_;
   std::string controller_switch_service_;
   std::string controller_list_service_;
   std::string body_force_controller_name_;
   std::string body_velocity_controller_name_;
   std::string position_hold_controller_name_;
+  std::string position_hold_reposition_controller_name_;
   std::string stabilize_controller_name_;
   std::string depth_hold_controller_name_;
   std::string alpha_left_forward_velocity_controller_name_;
   std::string alpha_right_forward_velocity_controller_name_;
   std::string alpha_left_joint_trajectory_controller_name_;
   std::string alpha_right_joint_trajectory_controller_name_;
-  std::string active_command_topic_;
+  std::string active_command_controller_;
   std::string body_force_command_topic_;
   std::string body_velocity_setpoint_topic_;
   std::string position_hold_feedforward_topic_;
+  std::string position_hold_reposition_feedforward_topic_;
   std::string stabilize_feedforward_topic_;
   std::string depth_hold_feedforward_topic_;
   std::string alpha_left_forward_velocity_command_topic_;
@@ -1461,6 +1832,8 @@ private:
   double depth_hold_feedforward_gain_pitch_{20.0};
   double depth_hold_feedforward_gain_yaw_{1.0};
   double alpha_axis_a_velocity_scale_{0.01};
+  double autonomous_mode_value_{-1.0};
+  double autonomous_mode_tolerance_{0.05};
 
   JoyMsg::SharedPtr last_joy_msg_;
   TeleopMode teleop_mode_{TeleopMode::Auv};
@@ -1469,18 +1842,25 @@ private:
     AlphaForwardControllerSelection::None};
 
   rclcpp::Subscription<JoyMsg>::SharedPtr joy_sub_;
-  rclcpp::Publisher<TwistMsg>::SharedPtr twist_command_pub_;
-  rclcpp::Publisher<WrenchMsg>::SharedPtr wrench_command_pub_;
+  rclcpp::Publisher<SuraVelocityCommandMsg>::SharedPtr velocity_intent_pub_;
+  rclcpp::Publisher<SuraWrenchCommandMsg>::SharedPtr wrench_intent_pub_;
+  rclcpp::Publisher<BoolMsg>::SharedPtr autonomous_enabled_pub_;
+  rclcpp::Publisher<TwistMsg>::SharedPtr position_hold_feedforward_pub_;
+  rclcpp::Publisher<TwistMsg>::SharedPtr position_hold_reposition_feedforward_pub_;
   rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_left_forward_velocity_command_pub_;
   rclcpp::Publisher<Float64MultiArrayMsg>::SharedPtr alpha_right_forward_velocity_command_pub_;
   rclcpp::Client<ListControllersSrv>::SharedPtr list_controllers_client_;
   rclcpp::Client<SwitchControllerSrv>::SharedPtr switch_controller_client_;
+  rclcpp::Client<sura_msgs::srv::ClearControllerIntents>::SharedPtr clear_controller_intents_client_;
+  rclcpp::Client<ControllerInterlockSrv>::SharedPtr controller_interlock_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr stabilize_enable_roll_pitch_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr stabilize_disable_roll_pitch_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr depth_hold_enable_roll_pitch_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr depth_hold_disable_roll_pitch_client_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr alpha_forward_timer_;
+  rclcpp::TimerBase::SharedPtr controller_interlock_timer_;
+  std::vector<std::string> controller_interlock_blocked_controllers_;
 };
 
 int main(int argc, char ** argv)

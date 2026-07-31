@@ -13,6 +13,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(sura_msgs REQUIRED)
 
 add_executable(cirtesub_teleop
   src/cirtesub_teleop.cpp
@@ -26,6 +27,7 @@ ament_target_dependencies(cirtesub_teleop
   sensor_msgs
   std_msgs
   std_srvs
+  sura_msgs
 )
 
 install(
