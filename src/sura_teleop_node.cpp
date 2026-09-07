@@ -17,22 +17,22 @@
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
-class CirtesubTeleop : public rclcpp::Node
+class SuraTeleopNode : public rclcpp::Node
 {
 public:
-  CirtesubTeleop()
-  : Node("cirtesub_teleop")
+  SuraTeleopNode()
+  : Node("sura_teleop")
   {
     declare_parameter<double>("rate", 20.0);
     declare_parameter<std::string>("joy_topic", "/joy");
     declare_parameter<std::string>(
-      "controller_switch_service", "/cirtesub/controller/controller_manager/switch_controller");
+      "controller_switch_service", "controller/controller_manager/switch_controller");
     declare_parameter<std::string>(
-      "controller_list_service", "/cirtesub/controller/controller_manager/list_controllers");
+      "controller_list_service", "controller/controller_manager/list_controllers");
     declare_parameter<std::string>("body_force_controller.name", "body_force");
     declare_parameter<std::string>(
       "body_force_controller.command_topic",
-      "/cirtesub/controller/body_force/command");
+      "controller/body_force/command");
     declare_parameter<double>("body_force_controller.feedforward_gain_x", 20.0);
     declare_parameter<double>("body_force_controller.feedforward_gain_y", 20.0);
     declare_parameter<double>("body_force_controller.feedforward_gain_z", 90.0);
@@ -42,15 +42,15 @@ public:
     declare_parameter<std::string>("body_velocity_controller.name", "body_velocity");
     declare_parameter<std::string>(
       "body_velocity_controller.setpoint_topic",
-      "/cirtesub/controller/body_velocity/setpoint");
+      "controller/body_velocity/setpoint");
     declare_parameter<std::string>("position_hold_controller.name", "position_hold");
     declare_parameter<std::string>(
       "position_hold_controller.feedforward_topic",
-      "/cirtesub/controller/position_hold/feedforward");
+      "controller/position_hold/feedforward");
     declare_parameter<std::string>("stabilize_controller.name", "stabilize");
     declare_parameter<std::string>(
       "stabilize_controller.feedforward_topic",
-      "/cirtesub/controller/stabilize/feedforward");
+      "controller/stabilize/feedforward");
     declare_parameter<double>("stabilize_controller.feedforward_gain_x", 20.0);
     declare_parameter<double>("stabilize_controller.feedforward_gain_y", 20.0);
     declare_parameter<double>("stabilize_controller.feedforward_gain_z", 90.0);
@@ -59,14 +59,14 @@ public:
     declare_parameter<double>("stabilize_controller.feedforward_gain_yaw", 1.0);
     declare_parameter<std::string>(
       "stabilize_controller.enable_roll_pitch_service",
-      "/cirtesub/controller/stabilize/enable_roll_pitch");
+      "controller/stabilize/enable_roll_pitch");
     declare_parameter<std::string>(
       "stabilize_controller.disable_roll_pitch_service",
-      "/cirtesub/controller/stabilize/disable_roll_pitch");
+      "controller/stabilize/disable_roll_pitch");
     declare_parameter<std::string>("depth_hold_controller.name", "depth_hold");
     declare_parameter<std::string>(
       "depth_hold_controller.feedforward_topic",
-      "/cirtesub/controller/depth_hold/feedforward");
+      "controller/depth_hold/feedforward");
     declare_parameter<double>("depth_hold_controller.feedforward_gain_x", 20.0);
     declare_parameter<double>("depth_hold_controller.feedforward_gain_y", 20.0);
     declare_parameter<double>("depth_hold_controller.feedforward_gain_z", 90.0);
@@ -75,10 +75,10 @@ public:
     declare_parameter<double>("depth_hold_controller.feedforward_gain_yaw", 1.0);
     declare_parameter<std::string>(
       "depth_hold_controller.enable_roll_pitch_service",
-      "/cirtesub/controller/depth_hold/enable_roll_pitch");
+      "controller/depth_hold/enable_roll_pitch");
     declare_parameter<std::string>(
       "depth_hold_controller.disable_roll_pitch_service",
-      "/cirtesub/controller/depth_hold/disable_roll_pitch");
+      "controller/depth_hold/disable_roll_pitch");
     declare_parameter<int>("buttons.a", 0);
     declare_parameter<int>("buttons.b", 1);
     declare_parameter<int>("buttons.x", 2);
@@ -139,28 +139,28 @@ public:
       "alpha_right_cartesian_velocity_controller");
     declare_parameter<std::string>(
       "alpha_left_forward_velocity_controller.command_topic",
-      "/cirtesub/controller/alpha_left_forward_velocity_controller/commands");
+      "controller/alpha_left_forward_velocity_controller/commands");
     declare_parameter<std::string>(
       "alpha_right_forward_velocity_controller.command_topic",
-      "/cirtesub/controller/alpha_right_forward_velocity_controller/commands");
+      "controller/alpha_right_forward_velocity_controller/commands");
     declare_parameter<std::string>(
       "alpha_left_gripper_velocity_controller.command_topic",
-      "/cirtesub/controller/alpha_left_gripper_velocity_controller/commands");
+      "controller/alpha_left_gripper_velocity_controller/commands");
     declare_parameter<std::string>(
       "alpha_right_gripper_velocity_controller.command_topic",
-      "/cirtesub/controller/alpha_right_gripper_velocity_controller/commands");
+      "controller/alpha_right_gripper_velocity_controller/commands");
     declare_parameter<std::string>(
       "alpha_left_cartesian_velocity_controller.command_topic",
-      "/cirtesub/controller/alpha_left_cartesian_velocity_controller/twist");
+      "controller/alpha_left_cartesian_velocity_controller/twist");
     declare_parameter<std::string>(
       "alpha_right_cartesian_velocity_controller.command_topic",
-      "/cirtesub/controller/alpha_right_cartesian_velocity_controller/twist");
+      "controller/alpha_right_cartesian_velocity_controller/twist");
     declare_parameter<std::string>(
       "alpha_left_cartesian_velocity_controller.frame_id",
-      "cirtesub/alpha_left/base_link");
+      "alpha_left/base_link");
     declare_parameter<std::string>(
       "alpha_right_cartesian_velocity_controller.frame_id",
-      "cirtesub/alpha_right/base_link");
+      "alpha_right/base_link");
     declare_parameter<double>("alpha_forward_command_rate", 10.0);
     declare_parameter<double>("alpha_cartesian_command_rate", 10.0);
     declare_parameter<double>("scales.surge", 1.0);
@@ -373,7 +373,7 @@ public:
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       joy_topic_,
       rclcpp::SystemDefaultsQoS(),
-      std::bind(&CirtesubTeleop::joyCallback, this, std::placeholders::_1));
+      std::bind(&SuraTeleopNode::joyCallback, this, std::placeholders::_1));
 
     updateWrenchPublisher(stabilize_feedforward_topic_);
 
@@ -410,7 +410,7 @@ public:
 
     timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / rate_),
-      std::bind(&CirtesubTeleop::timerCallback, this));
+      std::bind(&SuraTeleopNode::timerCallback, this));
 
     if (alpha_forward_command_rate_ <= 0.0) {
       RCLCPP_WARN(
@@ -422,7 +422,7 @@ public:
 
     alpha_forward_timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / alpha_forward_command_rate_),
-      std::bind(&CirtesubTeleop::alphaForwardTimerCallback, this));
+      std::bind(&SuraTeleopNode::alphaForwardTimerCallback, this));
 
     if (alpha_cartesian_command_rate_ <= 0.0) {
       RCLCPP_WARN(
@@ -434,7 +434,7 @@ public:
 
     alpha_cartesian_timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / alpha_cartesian_command_rate_),
-      std::bind(&CirtesubTeleop::alphaCartesianTimerCallback, this));
+      std::bind(&SuraTeleopNode::alphaCartesianTimerCallback, this));
 
     RCLCPP_INFO(
       get_logger(),
@@ -1824,7 +1824,7 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<CirtesubTeleop>());
+  rclcpp::spin(std::make_shared<SuraTeleopNode>());
   rclcpp::shutdown();
   return 0;
 }

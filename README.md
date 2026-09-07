@@ -26,16 +26,15 @@ Use:
 
 ```bash
 ros2 launch sura_teleop teleop.launch.py \
-  robot_namespace:=<robot_namespace> \
-  teleop:=sim
+  robot_namespace:=<robot_namespace>
 ```
 
-For real operation:
+To override the robot profile environment explicitly:
 
 ```bash
 ros2 launch sura_teleop teleop.launch.py \
   robot_namespace:=<robot_namespace> \
-  teleop:=real
+  environment:=real
 ```
 
 The launch file starts:
@@ -47,16 +46,32 @@ The launch file starts:
 
 ## Profiles
 
-The launch file selects a YAML profile automatically:
+The launch file uses `environment` from the launch arguments when it is passed
+explicitly. If `environment` is empty, it reads `robot.environment` from:
 
-| Case | Profile |
+```text
+<robot_namespace>_description/config/bringup_description.yaml
+```
+
+Then it loads the matching YAML profile:
+
+```text
+config/teleop_params_<robot_namespace>_<environment>.yaml
+```
+
+For example:
+
+| Environment source | Profile |
 | --- | --- |
-| `robot_namespace` contains `bluerov` | `config/teleop_params_bluerov.yaml` |
-| otherwise, `teleop:=sim` | `config/teleop_params_cirtesub_sim.yaml` |
-| otherwise, `teleop:=real` | `config/teleop_params_cirtesub_real.yaml` |
+| `robot_namespace:=cirtesub environment:=sim` or `robot.environment: sim` | `config/teleop_params_cirtesub_sim.yaml` |
+| `robot_namespace:=cirtesub environment:=real` or `robot.environment: real` | `config/teleop_params_cirtesub_real.yaml` |
+| `robot_namespace:=bluerov environment:=sim` or `robot.environment: sim` | `config/teleop_params_bluerov_sim.yaml` |
+| `robot_namespace:=bluerov environment:=real` or `robot.environment: real` | `config/teleop_params_bluerov_real.yaml` |
 
-Before launching, topics inside the selected YAML are namespaced from `/sura/...`
-to `/<robot_namespace>/...`.
+If the exact YAML file does not exist, the launch fails with an error instead
+of selecting a fallback profile. Topic names are read from the selected YAML as
+written. The launch only adapts the YAML node key so the parameters apply to
+`/<robot_namespace>/sura_teleop`.
 
 ## Inputs And Outputs
 
@@ -197,7 +212,8 @@ ros2 topic echo /<robot_namespace>/controller/body_velocity/setpoint
 
 ## Notes
 
-- `teleop:=sim` and `teleop:=real` mainly select different gains and mappings.
+- `environment:=sim` and `environment:=real` can override the robot profile.
+  If they are not passed, `robot.environment` selects the YAML file.
 - The node only publishes commands for the currently selected mode.
 - Controller switching requires the controller manager services to be available.
 - If the joystick layout changes, update the matching YAML profile rather than

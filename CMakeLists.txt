@@ -14,11 +14,11 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
-add_executable(cirtesub_teleop
-  src/cirtesub_teleop.cpp
+add_executable(sura_teleop_node
+  src/sura_teleop_node.cpp
 )
 
-ament_target_dependencies(cirtesub_teleop
+ament_target_dependencies(sura_teleop_node
   ament_index_cpp
   controller_manager_msgs
   geometry_msgs
@@ -29,7 +29,7 @@ ament_target_dependencies(cirtesub_teleop
 )
 
 install(
-  TARGETS cirtesub_teleop
+  TARGETS sura_teleop_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

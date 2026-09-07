@@ -5,39 +5,86 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
 from pathlib import Path
+import yaml
+
+
+def environment_for_robot(robot_namespace):
+    description_package = f"{robot_namespace}_description"
+    config_path = os.path.join(
+        get_package_share_directory(description_package),
+        "config",
+        "bringup_description.yaml",
+    )
+
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        bringup_description = yaml.safe_load(config_file) or {}
+
+    robot_data = bringup_description.get("robot", {})
+    profile_robot_name = str(robot_data.get("name", "")).strip("/")
+    if profile_robot_name and profile_robot_name != robot_namespace:
+        raise RuntimeError(
+            f"robot.name '{profile_robot_name}' from '{config_path}' must match "
+            f"launch argument robot_namespace '{robot_namespace}'."
+        )
+
+    environment = str(robot_data.get("environment", "")).strip()
+    if environment not in ("sim", "real"):
+        raise RuntimeError(
+            f"robot.environment in '{config_path}' must be 'sim' or 'real', "
+            f"got '{environment}'."
+        )
+
+    return environment
+
+
+def config_for_robot(package_share, robot_namespace, environment):
+    config_name = f"teleop_params_{robot_namespace}_{environment}.yaml"
+    config_path = os.path.join(package_share, "config", config_name)
+    if not os.path.isfile(config_path):
+        raise RuntimeError(
+            "Teleop configuration file not found. Expected "
+            f"'{config_path}' for robot_namespace='{robot_namespace}' "
+            f"and environment='{environment}'."
+        )
+    return config_path
 
 
 def namespaced_config(config_file, robot_namespace):
-    text = Path(config_file).read_text(encoding="utf-8")
-    if robot_namespace:
-        text = text.replace("sura_teleop:", f"/{robot_namespace}/sura_teleop:", 1)
-        text = text.replace("/sura/", f"/{robot_namespace}/")
+    with open(config_file, "r", encoding="utf-8") as input_file:
+        config = yaml.safe_load(input_file) or {}
 
-    output_file = f"/tmp/sura_teleop_{robot_namespace or 'root'}_{Path(config_file).name}"
-    Path(output_file).write_text(text, encoding="utf-8")
+    node_config = config.get("sura_teleop")
+    if node_config is None:
+        node_config = config.get(f"/{robot_namespace}/sura_teleop")
+    if node_config is None:
+        raise RuntimeError(
+            f"Teleop configuration '{config_file}' must define parameters for "
+            "'sura_teleop'."
+        )
+
+    output_config = {f"/{robot_namespace}/sura_teleop": node_config}
+    output_file = f"/tmp/sura_teleop_{robot_namespace}_{Path(config_file).name}"
+    with open(output_file, "w", encoding="utf-8") as output:
+        yaml.safe_dump(output_config, output, default_flow_style=False)
     return output_file
-
-
-def config_for_namespace(package_share, robot_namespace, teleop_profile):
-    namespace = robot_namespace.lower()
-    if "bluerov" in namespace:
-        config_name = "teleop_params_bluerov.yaml"
-    else:
-        profile = teleop_profile.lower() or "sim"
-        if profile not in ("sim", "real"):
-            raise RuntimeError(
-                f"Launch argument 'teleop' must be 'sim' or 'real', got '{teleop_profile}'."
-            )
-        config_name = f"teleop_params_cirtesub_{profile}.yaml"
-    return os.path.join(package_share, "config", config_name)
 
 
 def launch_setup(context, *args, **kwargs):
     robot_namespace = LaunchConfiguration("robot_namespace").perform(context).strip("/")
-    teleop_profile = LaunchConfiguration("teleop").perform(context).strip()
+    if not robot_namespace:
+        raise RuntimeError("Launch argument 'robot_namespace' cannot be empty.")
+
+    environment = LaunchConfiguration("environment").perform(context).strip()
+    if not environment:
+        environment = environment_for_robot(robot_namespace)
+    if environment not in ("sim", "real"):
+        raise RuntimeError(
+            f"Launch argument 'environment' must be 'sim' or 'real', got '{environment}'."
+        )
+
     package_share = get_package_share_directory("sura_teleop")
     params_file = namespaced_config(
-        config_for_namespace(package_share, robot_namespace, teleop_profile),
+        config_for_robot(package_share, robot_namespace, environment),
         robot_namespace,
     )
 
@@ -55,7 +102,7 @@ def launch_setup(context, *args, **kwargs):
 
     teleop_node = Node(
         package="sura_teleop",
-        executable="cirtesub_teleop",
+        executable="sura_teleop_node",
         name="sura_teleop",
         namespace=robot_namespace,
         output="screen",
@@ -70,7 +117,7 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument("robot_namespace", default_value="sura"),
-        DeclareLaunchArgument("teleop", default_value="sim"),
+        DeclareLaunchArgument("robot_namespace", default_value=""),
+        DeclareLaunchArgument("environment", default_value=""),
         OpaqueFunction(function=launch_setup),
     ])
