@@ -89,6 +89,12 @@ def launch_setup(context, *args, **kwargs):
     if not robot_namespace:
         raise RuntimeError("Launch argument 'robot_namespace' cannot be empty.")
 
+    robot_type = LaunchConfiguration("robot_type").perform(context).strip().lower()
+    if robot_type not in ("auv", "usv"):
+        raise RuntimeError(
+            f"Launch argument 'robot_type' must be 'auv' or 'usv', got '{robot_type}'."
+        )
+
     environment = LaunchConfiguration("environment").perform(context).strip()
     if not environment:
         environment = environment_for_robot(robot_namespace)
@@ -121,7 +127,7 @@ def launch_setup(context, *args, **kwargs):
         name="sura_teleop",
         namespace=robot_namespace,
         output="screen",
-        parameters=[params_file],
+        parameters=[params_file, {"robot_type": robot_type}],
     )
 
     return [
@@ -134,5 +140,6 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("robot_namespace", default_value=""),
         DeclareLaunchArgument("environment", default_value=""),
+        DeclareLaunchArgument("robot_type", default_value="auv"),
         OpaqueFunction(function=launch_setup),
     ])

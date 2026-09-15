@@ -1,8 +1,10 @@
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -30,6 +32,7 @@ public:
   {
     declare_parameter<double>("rate", 20.0);
     declare_parameter<std::string>("joy_topic", "/joy");
+    declare_parameter<std::string>("robot_type", "auv");
     declare_parameter<std::string>("requester", "teleop");
     declare_parameter<int>("priority", 80);
     declare_parameter<int>("idle_priority", 50);
@@ -156,6 +159,14 @@ public:
 
     rate_ = get_parameter("rate").as_double();
     joy_topic_ = get_parameter("joy_topic").as_string();
+    robot_type_ = get_parameter("robot_type").as_string();
+    std::transform(
+      robot_type_.begin(), robot_type_.end(), robot_type_.begin(),
+      [](unsigned char character) {return static_cast<char>(std::tolower(character));});
+    if (robot_type_ != "auv" && robot_type_ != "usv") {
+      throw std::invalid_argument("Parameter 'robot_type' must be 'auv' or 'usv'.");
+    }
+    is_usv_ = robot_type_ == "usv";
     requester_ = get_parameter("requester").as_string();
     priority_ = static_cast<int>(std::clamp<int64_t>(get_parameter("priority").as_int(), 1, 100));
     idle_priority_ = static_cast<int>(
@@ -1024,11 +1035,13 @@ private:
       {
         activate_controllers.push_back(body_velocity_controller_name_);
       }
-      if (isControllerActive(controller_states, stabilize_controller_name_)) {
-        deactivate_controllers.push_back(stabilize_controller_name_);
-      }
-      if (!isControllerActive(controller_states, depth_hold_controller_name_)) {
-        activate_controllers.push_back(depth_hold_controller_name_);
+      if (!is_usv_) {
+        if (isControllerActive(controller_states, stabilize_controller_name_)) {
+          deactivate_controllers.push_back(stabilize_controller_name_);
+        }
+        if (!isControllerActive(controller_states, depth_hold_controller_name_)) {
+          activate_controllers.push_back(depth_hold_controller_name_);
+        }
       }
     } else {
       if (isControllerActive(controller_states, body_velocity_controller_name_)) {
@@ -1065,10 +1078,12 @@ private:
 
         if (enable) {
           body_force_enabled_ = true;
-          stabilize_enabled_ = false;
           position_hold_enabled_ = false;
           clearControllerIntents(position_hold_controller_name_);
-          depth_hold_enabled_ = true;
+          if (!is_usv_) {
+            stabilize_enabled_ = false;
+            depth_hold_enabled_ = true;
+          }
           updateTwistPublisher(body_velocity_controller_name_);
         }
         body_velocity_enabled_ = enable;
@@ -1081,8 +1096,12 @@ private:
         if (!body_velocity_enabled_) {
           publishZeroFeedforward();
           clearControllerIntents(body_velocity_controller_name_);
-          depth_hold_enabled_ = true;
-          updateWrenchPublisher(depth_hold_controller_name_);
+          if (is_usv_) {
+            updateWrenchPublisher(body_force_controller_name_);
+          } else {
+            depth_hold_enabled_ = true;
+            updateWrenchPublisher(depth_hold_controller_name_);
+          }
         }
       });
   }
@@ -1754,6 +1773,7 @@ private:
 
   bool body_force_enabled_{false};
   bool body_velocity_enabled_{false};
+  bool is_usv_{false};
   bool position_hold_enabled_{false};
   bool stabilize_enabled_{false};
   bool depth_hold_enabled_{false};
@@ -1795,6 +1815,7 @@ private:
   std::string position_hold_reposition_controller_name_;
   std::string stabilize_controller_name_;
   std::string depth_hold_controller_name_;
+  std::string robot_type_{"auv"};
   std::string alpha_left_forward_velocity_controller_name_;
   std::string alpha_right_forward_velocity_controller_name_;
   std::string alpha_left_joint_trajectory_controller_name_;

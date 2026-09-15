@@ -7,45 +7,21 @@ sura_teleop:
 
     body_force_controller:
       name: body_force
-      command_topic: /blueboat/controller/body_force/command
+      command_topic: /blueboat/controller/arbitrator/wrench
       feedforward_gain_x: 350.0
       feedforward_gain_y: 0.0
       feedforward_gain_z: 0.0
       feedforward_gain_roll: 0.0
       feedforward_gain_pitch: 0.0
-      feedforward_gain_yaw: 20.0
+      feedforward_gain_yaw: 80.0
 
     body_velocity_controller:
       name: body_velocity
-      setpoint_topic: /cmd_vel
+      setpoint_topic: /blueboat/controller/arbitrator/velocity
 
     position_hold_controller:
       name: blueboat_unused_position_hold_controller
       feedforward_topic: /cmd_vel
-
-    stabilize_controller:
-      name: blueboat_unused_stabilize_controller
-      feedforward_topic: /body_force/command
-      enable_roll_pitch_service: /blueboat/controller/blueboat_unused_stabilize_controller/enable_roll_pitch
-      disable_roll_pitch_service: /blueboat/controller/blueboat_unused_stabilize_controller/disable_roll_pitch
-      feedforward_gain_x: 350.0
-      feedforward_gain_y: 0.0
-      feedforward_gain_z: 0.0
-      feedforward_gain_roll: 0.0
-      feedforward_gain_pitch: 0.0
-      feedforward_gain_yaw: 20.0
-
-    depth_hold_controller:
-      name: body_force
-      feedforward_topic: /blueboat/controller/body_force/command
-      enable_roll_pitch_service: /blueboat/controller/body_force/enable_roll_pitch
-      disable_roll_pitch_service: /blueboat/controller/body_force/disable_roll_pitch
-      feedforward_gain_x: 350.0
-      feedforward_gain_y: 0.0
-      feedforward_gain_z: 0.0
-      feedforward_gain_roll: 0.0
-      feedforward_gain_pitch: 0.0
-      feedforward_gain_yaw: 20.0
 
     buttons:
       a: 0
